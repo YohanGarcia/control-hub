@@ -1,7 +1,7 @@
 """unique slug per host_type
 
 Revision ID: ed661a014615
-Revises: 20260508_0004_add_actions_tables
+Revises: 20260508_0004
 Create Date: 2026-05-08
 
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "ed661a014615"
-down_revision = "20260508_0004_add_actions_tables"
+down_revision = "20260508_0004"
 branch_labels = None
 depends_on = None
 
