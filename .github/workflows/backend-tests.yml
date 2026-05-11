@@ -1,0 +1,75 @@
+name: Backend Tests
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: controlhub
+          POSTGRES_PASSWORD: controlhub
+          POSTGRES_DB: controlhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U controlhub -d controlhub"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DATABASE_URL: postgresql+psycopg://controlhub:controlhub@localhost:5432/controlhub
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: ci-secret-key
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "15"
+      REFRESH_TOKEN_EXPIRE_DAYS: "30"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Seed admin and base device
+        run: |
+          PYTHONPATH=. python scripts/bootstrap_admin.py
+          PYTHONPATH=. python -c "from sqlalchemy import select; from app.db.session import SessionLocal; from app.models.user import User; from app.core.security import hash_password; db=SessionLocal(); u=db.scalar(select(User).where(User.email=='admin@controlhub.app')); u.password_hash=hash_password('UltraSecurePass123!'); u.twofa_enabled=True; u.twofa_secret='JBSWY3DPEHPK3PXP'; u.password_change_required=False; db.commit(); db.close()"
+
+      - name: Run tests
+        run: PYTHONPATH=. pytest -q
