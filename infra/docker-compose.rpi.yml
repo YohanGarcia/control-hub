@@ -44,15 +44,15 @@ services:
         condition: service_healthy
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: ..
+      dockerfile: app_flutter/Dockerfile.web
+    image: controlhub-web:latest
     restart: unless-stopped
     ports:
       - "80:80"
     depends_on:
       - api
-    volumes:
-      - ./nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - ../app_flutter/build/web:/usr/share/nginx/html:ro
 
 volumes:
   postgres_data:
