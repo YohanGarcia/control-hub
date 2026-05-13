@@ -8,19 +8,51 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.models.refresh_token import RefreshToken
+from app.models.role import Role
 from app.models.user import User
-from app.schemas.auth import TokenPairResponse
+from app.schemas.auth import RegisterRequest, TokenPairResponse
 
 
-def authenticate_user(db: Session, email: str, password: str, totp_code: str) -> User:
+def authenticate_user(db: Session, email: str, password: str, totp_code: str | None) -> User:
     user = verify_user_credentials(db, email, password)
 
     if not user.twofa_enabled or not user.twofa_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="2FA is not configured")
+        return user
+
+    if not totp_code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="2FA code required",
+            headers={"X-Requires-2FA": "true"},
+        )
 
     if not pyotp.TOTP(user.twofa_secret).verify(totp_code, valid_window=1):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid 2FA code")
 
+    return user
+
+
+def register_user(db: Session, payload: RegisterRequest) -> User:
+    existing = db.scalar(select(User).where(User.email == payload.email))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    admin_role = db.scalar(select(Role).where(Role.name == "admin"))
+    if not admin_role:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Admin role not configured")
+
+    user = User(
+        email=payload.email,
+        full_name=payload.full_name,
+        password_hash=hash_password(payload.password),
+        is_active=True,
+        role_id=admin_role.id,
+        twofa_enabled=False,
+        twofa_secret=None,
+        password_change_required=False,
+    )
+    db.add(user)
+    db.flush()
     return user
 
 

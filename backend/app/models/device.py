@@ -18,3 +18,4 @@ class Device(Base, TimestampMixin):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     agent_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)

@@ -39,6 +39,7 @@ def get_action(db: Session, action_id: int) -> ActionCatalog | None:
 def create_action_run(db: Session, *, device: Device, action: ActionCatalog, user: User, params: dict) -> ActionRun:
     run = ActionRun(
         request_id=uuid4().hex,
+        organization_id=device.organization_id,
         device_id=device.id,
         action_id=action.id,
         requested_by_user_id=user.id,
@@ -75,10 +76,17 @@ def get_run_by_request_id(db: Session, request_id: str) -> ActionRun | None:
     return db.scalar(select(ActionRun).where(ActionRun.request_id == request_id))
 
 
-def get_run(db: Session, run_id: int) -> ActionRun | None:
-    return db.get(ActionRun, run_id)
+def get_run(db: Session, run_id: int, organization_id: int | None = None) -> ActionRun | None:
+    if organization_id is None:
+        return db.get(ActionRun, run_id)
+    query = select(ActionRun).where(ActionRun.id == run_id, ActionRun.organization_id == organization_id)
+    return db.scalar(query)
 
 
-def list_device_runs(db: Session, device_id: int) -> list[ActionRun]:
-    query = select(ActionRun).where(ActionRun.device_id == device_id).order_by(ActionRun.created_at.desc())
+def list_device_runs(db: Session, device_id: int, organization_id: int) -> list[ActionRun]:
+    query = (
+        select(ActionRun)
+        .where(ActionRun.device_id == device_id, ActionRun.organization_id == organization_id)
+        .order_by(ActionRun.created_at.desc())
+    )
     return list(db.scalars(query))

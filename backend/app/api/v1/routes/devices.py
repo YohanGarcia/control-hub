@@ -3,8 +3,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_membership, get_current_user, require_org_role
 from app.db.session import get_db
+from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.schemas.device import DeviceCreateRequest, DeviceMetricResponse, DeviceResponse, DeviceStatusResponse, DeviceUpdateRequest
 from app.services.audit_service import create_audit_log
@@ -17,9 +18,9 @@ router = APIRouter()
 @router.get("/devices", response_model=list[DeviceResponse])
 def get_devices(
     db: Session = Depends(get_db),
-    _: User = Depends(require_role("admin", "observer")),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> list[DeviceResponse]:
-    return [DeviceResponse.model_validate(d) for d in list_devices(db)]
+    return [DeviceResponse.model_validate(d) for d in list_devices(db, membership.organization_id)]
 
 
 @router.post("/devices", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
@@ -27,11 +28,13 @@ def post_device(
     payload: DeviceCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin")),
+    user: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(require_org_role("owner", "admin")),
 ) -> DeviceResponse:
-    device = create_device(db, payload, user)
+    device = create_device(db, payload, user, membership)
     create_audit_log(
         db,
+        organization_id=membership.organization_id,
         event_type="device.created",
         actor_user_id=user.id,
         source_ip=request.client.host if request.client else None,
@@ -49,15 +52,17 @@ def patch_device(
     payload: DeviceUpdateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin")),
+    user: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(require_org_role("owner", "admin")),
 ) -> DeviceResponse:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
     updated = update_device(db, device, payload)
     create_audit_log(
         db,
+        organization_id=membership.organization_id,
         event_type="device.updated",
         actor_user_id=user.id,
         source_ip=request.client.host if request.client else None,
@@ -73,9 +78,9 @@ def patch_device(
 def get_device_status(
     device_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> DeviceStatusResponse:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
@@ -101,9 +106,9 @@ def get_device_metrics(
     from_ts: datetime | None = Query(default=None),
     to_ts: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> list[DeviceMetricResponse]:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 

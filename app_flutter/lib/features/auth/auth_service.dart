@@ -10,16 +10,20 @@ class AuthService {
   Future<void> login({
     required String email,
     required String password,
-    required String totpCode,
+    String? totpCode,
   }) async {
+    final body = <String, dynamic>{
+      'email': email,
+      'password': password,
+    };
+    if (totpCode != null && totpCode.isNotEmpty) {
+      body['totp_code'] = totpCode;
+    }
+
     final response = await _apiClient.post(
       '/auth/login',
       withAuth: false,
-      body: {
-        'email': email,
-        'password': password,
-        'totp_code': totpCode,
-      },
+      body: body,
     );
 
     final access = response['access_token'] as String?;
@@ -28,5 +32,21 @@ class AuthService {
       throw ApiException('Token response invalid', 500);
     }
     await _sessionStore.saveTokens(access: access, refresh: refresh);
+  }
+
+  Future<void> register({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async {
+    await _apiClient.post(
+      '/auth/register',
+      withAuth: false,
+      body: {
+        'email': email,
+        'password': password,
+        'full_name': fullName,
+      },
+    );
   }
 }

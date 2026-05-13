@@ -7,6 +7,7 @@ import re
 import hashlib
 import hmac
 import json
+import os
 import logging
 import platform
 import signal
@@ -18,6 +19,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from urllib import request as urllib_request
+from urllib.error import HTTPError, URLError
 
 import psutil
 import websocket
@@ -45,6 +48,37 @@ class AiPtySession:
 def compute_handshake_signature(device_id: int, agent_key: str, timestamp: int, nonce: str) -> str:
     msg = f"{device_id}:{timestamp}:{nonce}"
     return hmac.new(agent_key.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def enroll_agent(
+    *,
+    server: str,
+    token: str,
+    name: str,
+    host_type: str,
+    os_name: str | None,
+    agent_version: str | None,
+) -> tuple[int, str]:
+    payload = {
+        "token": token,
+        "name": name,
+        "host_type": host_type,
+        "os_name": os_name,
+        "agent_version": agent_version,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    url = server.rstrip("/") + "/api/v1/agent/enroll"
+    req = urllib_request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib_request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Enrollment failed: HTTP {exc.code} {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Enrollment failed: {exc}") from exc
+
+    return int(data["device_id"]), str(data["agent_key"])
 
 
 def get_system_metrics() -> dict[str, Any]:
@@ -224,6 +258,8 @@ class Agent:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
         )
         self._terminal_sessions[session_id] = process
@@ -682,8 +718,13 @@ class Agent:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Control Hub Agent")
     parser.add_argument("--server", required=True, help="Server URL (e.g., http://127.0.0.1:8001)")
-    parser.add_argument("--device-id", type=int, required=True, help="Device ID registered in the server")
-    parser.add_argument("--agent-key", required=True, help="Agent key for authentication")
+    parser.add_argument("--device-id", type=int, required=False, help="Device ID registered in the server")
+    parser.add_argument("--agent-key", required=False, help="Agent key for authentication")
+    parser.add_argument("--enroll-token", required=False, help="One-time enrollment token")
+    parser.add_argument("--device-name", required=False, help="Device name for enrollment")
+    parser.add_argument("--host-type", required=False, default=None, help="windows or ubuntu (or linux)")
+    parser.add_argument("--os-name", required=False, default=None, help="OS name for enrollment")
+    parser.add_argument("--credentials-file", required=False, default=".agent_credentials.json", help="Local credentials file path")
     parser.add_argument("--heartbeat-interval", type=int, default=15, help="Heartbeat interval in seconds")
     parser.add_argument("--metrics-interval", type=int, default=30, help="Metrics interval in seconds")
     args = parser.parse_args()
@@ -691,10 +732,41 @@ def main() -> None:
     ws_url = args.server.replace("http://", "ws://").replace("https://", "wss://")
     ws_url = ws_url.rstrip("/")
 
+    device_id = args.device_id
+    agent_key = args.agent_key
+
+    credentials_path = args.credentials_file
+    if (not device_id or not agent_key) and os.path.exists(credentials_path):
+        with open(credentials_path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        device_id = int(saved.get("device_id"))
+        agent_key = str(saved.get("agent_key"))
+
+    if not device_id or not agent_key:
+        if not args.enroll_token:
+            parser.error("Provide --device-id/--agent-key or --enroll-token")
+        if not args.device_name:
+            parser.error("--device-name is required with --enroll-token")
+        host_type = args.host_type or ("windows" if platform.system() == "Windows" else "ubuntu")
+        if host_type == "linux":
+            host_type = "ubuntu"
+        os_name = args.os_name or platform.platform()
+        device_id, agent_key = enroll_agent(
+            server=args.server,
+            token=args.enroll_token,
+            name=args.device_name,
+            host_type=host_type,
+            os_name=os_name,
+            agent_version="1.0.0",
+        )
+        with open(credentials_path, "w", encoding="utf-8") as f:
+            json.dump({"device_id": device_id, "agent_key": agent_key}, f)
+        log.info(f"Enrollment successful. Device ID: {device_id}")
+
     config = Config(
         server_url=ws_url,
-        device_id=args.device_id,
-        agent_key=args.agent_key,
+        device_id=int(device_id),
+        agent_key=str(agent_key),
         heartbeat_interval=args.heartbeat_interval,
         metrics_interval=args.metrics_interval,
     )

@@ -38,6 +38,18 @@ class ApiClient {
     return _request(method: 'GET', path: path, withAuth: withAuth);
   }
 
+  Future<Map<String, dynamic>> delete(String path, {bool withAuth = true}) async {
+    return _request(method: 'DELETE', path: path, withAuth: withAuth);
+  }
+
+  Future<Map<String, dynamic>> patch(
+    String path, {
+    Map<String, dynamic>? body,
+    bool withAuth = true,
+  }) async {
+    return _request(method: 'PATCH', path: path, body: body, withAuth: withAuth);
+  }
+
   Future<Map<String, dynamic>> _request({
     required String method,
     required String path,
@@ -53,6 +65,14 @@ class ApiClient {
       try {
         if (method == 'GET') {
           response = await _httpClient.get(uri, headers: _headers(token));
+        } else if (method == 'DELETE') {
+          response = await _httpClient.delete(uri, headers: _headers(token));
+        } else if (method == 'PATCH') {
+          response = await _httpClient.patch(
+            uri,
+            headers: _headers(token),
+            body: jsonEncode(body ?? {}),
+          );
         } else {
           response = await _httpClient.post(
             uri,
@@ -130,9 +150,11 @@ class ApiClient {
   }
 
   Map<String, String> _headers(String? token) {
+    final selectedOrgId = _sessionStore.selectedOrganizationId;
     return {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      if (selectedOrgId != null) 'X-Organization-Id': selectedOrgId.toString(),
     };
   }
 

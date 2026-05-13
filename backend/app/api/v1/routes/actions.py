@@ -3,8 +3,9 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_membership, get_current_user, require_org_role
 from app.db.session import get_db
+from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.schemas.action import ActionCatalogResponse, ActionRunRequest, ActionRunResponse
 from app.services.action_service import (
@@ -29,9 +30,9 @@ router = APIRouter()
 def get_device_actions(
     device_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> list[ActionCatalogResponse]:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     return [ActionCatalogResponse.model_validate(a) for a in list_actions_for_host(db, device.host_type)]
@@ -44,9 +45,10 @@ async def run_device_action(
     payload: ActionRunRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin")),
+    user: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(require_org_role("owner", "admin", "operator")),
 ) -> ActionRunResponse:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
@@ -85,6 +87,7 @@ async def run_device_action(
 
     create_audit_log(
         db,
+        organization_id=membership.organization_id,
         event_type="action.run.dispatched",
         actor_user_id=user.id,
         source_ip=request.client.host if request.client else None,
@@ -117,21 +120,21 @@ async def run_device_action(
 def get_device_action_history(
     device_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> list[ActionRunResponse]:
-    device = get_device(db, device_id)
+    device = get_device(db, device_id, membership.organization_id)
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    return [ActionRunResponse.model_validate(r) for r in list_device_runs(db, device_id)]
+    return [ActionRunResponse.model_validate(r) for r in list_device_runs(db, device_id, membership.organization_id)]
 
 
 @router.get("/runs/{run_id}", response_model=ActionRunResponse)
 def get_action_run(
     run_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    membership: OrganizationMember = Depends(get_current_membership),
 ) -> ActionRunResponse:
-    run = get_run(db, run_id)
+    run = get_run(db, run_id, membership.organization_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
     return ActionRunResponse.model_validate(run)

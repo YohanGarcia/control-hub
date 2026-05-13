@@ -11,6 +11,7 @@ class ActionRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     request_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False, index=True)
     action_id: Mapped[int] = mapped_column(ForeignKey("actions_catalog.id"), nullable=False, index=True)
     requested_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)

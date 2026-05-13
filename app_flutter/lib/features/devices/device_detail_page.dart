@@ -127,6 +127,9 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> with Ticker
       if (sessionId != null && sessionId.isNotEmpty) {
         setState(() { _terminalSessionId = sessionId; _terminalStarting = false; _terminalActive = true; });
         _appendTerminal('[session started: $sessionId]\n');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _terminalInputFocus.requestFocus();
+        });
       }
       return;
     }

@@ -7,6 +7,8 @@ import '../features/devices/devices_page.dart';
 import '../features/devices/device_detail_page.dart';
 import '../features/actions/global_runs_page.dart';
 import '../features/settings/settings_page.dart';
+import '../features/settings/team_page.dart';
+import '../features/organizations/no_organization_page.dart';
 import '../core/providers.dart';
 import '../core/app_config.dart';
 import '../features/devices/device_models.dart';
@@ -82,6 +84,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsPage(),
+      ),
+      GoRoute(
+        path: '/team',
+        builder: (context, state) => const TeamPage(),
+      ),
+      GoRoute(
+        path: '/no-org',
+        builder: (context, state) => const NoOrganizationPage(),
       ),
     ],
   );

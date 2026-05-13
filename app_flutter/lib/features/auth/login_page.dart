@@ -13,16 +13,19 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController(text: 'admin@controlhub.app');
-  final _passCtrl = TextEditingController(text: 'UltraSecurePass123!');
+  final _emailCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   final _totpCtrl = TextEditingController();
   bool _obscurePass = true;
+  bool _registerMode = false;
 
   String? _error;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
+    _nameCtrl.dispose();
     _passCtrl.dispose();
     _totpCtrl.dispose();
     super.dispose();
@@ -32,15 +35,49 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _error = null);
 
+    if (_registerMode) {
+      final ok = await ref.read(authControllerProvider.notifier).register(
+            email: _emailCtrl.text.trim(),
+            password: _passCtrl.text,
+            fullName: _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim(),
+          );
+      if (!mounted) return;
+      if (!ok) {
+        setState(() => _error = ref.read(authControllerProvider).error ?? 'No se pudo registrar');
+      } else {
+        setState(() {
+          _registerMode = false;
+          _totpCtrl.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cuenta creada. Ahora inicia sesion.')),
+        );
+      }
+      return;
+    }
+
+    final authState = ref.read(authControllerProvider);
+    final totpCode = authState.requires2FA ? _totpCtrl.text.trim() : null;
+
+    if (authState.requires2FA && (totpCode == null || totpCode.isEmpty)) {
+      setState(() => _error = 'Ingresa el codigo 2FA');
+      return;
+    }
+
     final ok = await ref.read(authControllerProvider.notifier).login(
           email: _emailCtrl.text.trim(),
           password: _passCtrl.text,
-          totpCode: _totpCtrl.text.trim(),
+          totpCode: totpCode,
         );
 
     if (!mounted) return;
     if (!ok) {
-      setState(() => _error = ref.read(authControllerProvider).error ?? 'No se pudo iniciar sesion');
+      final newState = ref.read(authControllerProvider);
+      if (newState.requires2FA) {
+        setState(() => _error = 'Ingresa el codigo 2FA');
+      } else {
+        setState(() => _error = newState.error ?? 'No se pudo iniciar sesion');
+      }
     } else {
       context.go('/');
     }
@@ -126,20 +163,35 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           validator: (v) => (v == null || v.isEmpty) ? 'Ingresa password' : null,
                         ),
                         const SizedBox(height: 16),
-                        const Text('Codigo 2FA', style: TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _totpCtrl,
-                          keyboardType: TextInputType.number,
-                          maxLength: 6,
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.security),
-                            counterText: '',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            hintText: '6 digitos',
+                        if (_registerMode) ...[
+                          const SizedBox(height: 16),
+                          const Text('Nombre (opcional)', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _nameCtrl,
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.person_outline),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
                           ),
-                          validator: (v) => (v == null || v.length != 6) ? 'Codigo invalido' : null,
-                        ),
+                        ] else if (authState.requires2FA) ...[
+                          const SizedBox(height: 16),
+                          const Text('Codigo 2FA', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _totpCtrl,
+                            autofocus: true,
+                            keyboardType: TextInputType.number,
+                            maxLength: 6,
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.security),
+                              counterText: '',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              hintText: '6 digitos',
+                            ),
+                            validator: (v) => (v == null || v.length != 6) ? 'Codigo invalido' : null,
+                          ),
+                        ],
                         if (_error != null) ...[
                           const SizedBox(height: 10),
                           Container(
@@ -164,7 +216,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             onPressed: authState.loading ? null : _submit,
                             child: authState.loading
                                 ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Text('Entrar', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                                 : Text(_registerMode ? 'Crear cuenta' : 'Entrar', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                           ),
+                         ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.center,
+                          child: TextButton(
+                            onPressed: authState.loading
+                                ? null
+                                : () => setState(() {
+                                      _registerMode = !_registerMode;
+                                      _error = null;
+                                      _totpCtrl.clear();
+                                    }),
+                            child: Text(_registerMode ? 'Ya tengo cuenta' : 'Crear cuenta nueva'),
                           ),
                         ),
                       ],

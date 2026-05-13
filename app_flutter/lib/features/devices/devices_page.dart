@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/ws_client.dart';
 import '../../shared/ui_components.dart';
 import 'device_detail_page.dart';
+import 'enrollment_models.dart';
 import 'device_metric_model.dart';
 import 'device_models.dart';
 import 'device_service.dart';
@@ -35,14 +37,16 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
   _MobileDeviceFilter _mobileFilter = _MobileDeviceFilter.all;
+  List<OrganizationItem> _organizations = <OrganizationItem>[];
+  List<OrganizationMembershipItem> _memberships = <OrganizationMembershipItem>[];
+  int? _selectedOrganizationId;
 
   @override
   void initState() {
     super.initState();
     _deviceService = ref.read(deviceServiceProvider);
-    _future = _load();
-    final token = ref.read(sessionStoreProvider).accessToken;
-    if (token != null) _connectWs(token);
+    _future = Future.value(<Device>[]);
+    unawaited(_loadOrganizations());
   }
 
   @override
@@ -120,6 +124,50 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     return list;
   }
 
+  Future<void> _loadOrganizations() async {
+    final orgs = await _deviceService.fetchOrganizations();
+    final memberships = await _deviceService.fetchOrganizationMemberships();
+    if (!mounted) return;
+    if (orgs.isEmpty) {
+      context.go('/no-org');
+      return;
+    }
+    final session = ref.read(sessionStoreProvider);
+    int? selected = session.selectedOrganizationId;
+    if (selected == null || !orgs.any((o) => o.id == selected)) {
+      selected = orgs.isEmpty ? null : orgs.first.id;
+    }
+    if (!mounted) return;
+    setState(() {
+      _organizations = orgs;
+      _memberships = memberships;
+      _selectedOrganizationId = selected;
+    });
+    if (selected != null) {
+      await session.saveSelectedOrganizationId(selected);
+    }
+    _future = _load();
+    if (!mounted) return;
+    final token = ref.read(sessionStoreProvider).accessToken;
+    if (token != null) _connectWs(token);
+  }
+
+  Future<void> _onSelectOrganization(int orgId) async {
+    await ref.read(sessionStoreProvider).saveSelectedOrganizationId(orgId);
+    if (!mounted) return;
+    setState(() {
+      _selectedOrganizationId = orgId;
+      _future = _load();
+    });
+  }
+
+  OrganizationMembershipItem? get _selectedMembership {
+    final orgId = _selectedOrganizationId;
+    if (orgId == null) return null;
+    final found = _memberships.where((m) => m.organizationId == orgId);
+    return found.isEmpty ? null : found.first;
+  }
+
   List<Device> get _filteredDevices {
     if (_searchQuery.isEmpty) return _devices;
     final q = _searchQuery.toLowerCase();
@@ -134,6 +182,260 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     await ref.read(authControllerProvider.notifier).logout();
     if (!mounted) return;
     router.go('/login');
+  }
+
+  Future<void> _openEnrollmentDialog() async {
+    final organizations = await _deviceService.fetchOrganizations();
+    if (!mounted) return;
+    if (organizations.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes organizaciones disponibles para registrar dispositivos.')),
+      );
+      return;
+    }
+
+    OrganizationItem selectedOrg = organizations.first;
+    int expiresInSeconds = 600;
+    int maxUses = 1;
+    String deviceName = 'Mi-PC';
+    EnrollmentTokenCreated? created;
+    List<EnrollmentTokenItem> tokens = <EnrollmentTokenItem>[];
+    bool loadingTokens = true;
+
+    Future<void> reloadTokens(StateSetter setStateDialog) async {
+      setStateDialog(() => loadingTokens = true);
+      tokens = await _deviceService.fetchEnrollmentTokens(organizationId: selectedOrg.id);
+      if (!mounted) return;
+      setStateDialog(() => loadingTokens = false);
+    }
+
+    Future<void> verifyAgentConnected(StateSetter setStateDialog) async {
+      final list = await _deviceService.fetchDevices();
+      if (!mounted) return;
+      final normalized = deviceName.trim().toLowerCase();
+      final found = list.where((d) => d.name.trim().toLowerCase() == normalized).toList();
+      if (found.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aun no aparece el dispositivo. Verifica que el agente se haya ejecutado.')),
+        );
+        return;
+      }
+      final online = found.any((d) => d.isOnline);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(online ? 'Dispositivo detectado y online.' : 'Dispositivo detectado, pero offline.')),
+      );
+      setState(() {
+        _devices = list;
+      });
+      setStateDialog(() {});
+    }
+
+    String windowsCommand(String token) {
+      final safeName = deviceName.trim().isEmpty ? 'Mi-PC' : deviceName.trim();
+      final baseUrl = ref.read(appSettingsProvider).apiBaseUrl.replaceAll('/api/v1', '');
+      return 'python agent.py --server $baseUrl --enroll-token $token --device-name "$safeName"';
+    }
+
+    String linuxCommand(String token) {
+      final safeName = deviceName.trim().isEmpty ? 'mi-linux' : deviceName.trim();
+      final baseUrl = ref.read(appSettingsProvider).apiBaseUrl.replaceAll('/api/v1', '');
+      return 'python agent.py --server $baseUrl --enroll-token $token --device-name "$safeName" --host-type linux';
+    }
+
+    // ignore: use_build_context_synchronously
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            if (loadingTokens) {
+              unawaited(reloadTokens(setStateDialog));
+            }
+            return AlertDialog(
+              title: const Text('Agregar dispositivo (enrollment)'),
+              content: SizedBox(
+                width: 640,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        initialValue: selectedOrg.id,
+                        decoration: const InputDecoration(labelText: 'Organizacion'),
+                        items: organizations
+                            .map((o) => DropdownMenuItem<int>(value: o.id, child: Text('${o.name} (${o.slug})')))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          selectedOrg = organizations.firstWhere((o) => o.id == v);
+                          created = null;
+                          loadingTokens = true;
+                          setStateDialog(() {});
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre del dispositivo para el comando',
+                          hintText: 'Ej: oficina-pc-01',
+                        ),
+                        initialValue: deviceName,
+                        onChanged: (v) => deviceName = v,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              initialValue: expiresInSeconds,
+                              decoration: const InputDecoration(labelText: 'Expira en'),
+                              items: const [
+                                DropdownMenuItem(value: 300, child: Text('5 minutos')),
+                                DropdownMenuItem(value: 600, child: Text('10 minutos')),
+                                DropdownMenuItem(value: 1800, child: Text('30 minutos')),
+                                DropdownMenuItem(value: 3600, child: Text('60 minutos')),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setStateDialog(() => expiresInSeconds = v);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              initialValue: maxUses,
+                              decoration: const InputDecoration(labelText: 'Usos maximos'),
+                              items: const [
+                                DropdownMenuItem(value: 1, child: Text('1')),
+                                DropdownMenuItem(value: 3, child: Text('3')),
+                                DropdownMenuItem(value: 5, child: Text('5')),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setStateDialog(() => maxUses = v);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final token = await _deviceService.createEnrollmentToken(
+                            organizationId: selectedOrg.id,
+                            expiresInSeconds: expiresInSeconds,
+                            maxUses: maxUses,
+                          );
+                          created = token;
+                          await reloadTokens(setStateDialog);
+                          setStateDialog(() {});
+                        },
+                        icon: const Icon(Icons.vpn_key_rounded),
+                        label: const Text('Generar token'),
+                      ),
+                      if (created != null) ...[
+                        const SizedBox(height: 12),
+                        SelectableText('Token: ${created!.token}'),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          'Windows:\n${windowsCommand(created!.token)}',
+                        ),
+                        const SizedBox(height: 6),
+                        SelectableText(
+                          'Linux:\n${linuxCommand(created!.token)}',
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                unawaited(Clipboard.setData(ClipboardData(text: created!.token)));
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  const SnackBar(content: Text('Token copiado al portapapeles')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy_rounded),
+                              label: const Text('Copiar token'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                unawaited(Clipboard.setData(ClipboardData(text: windowsCommand(created!.token))));
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  const SnackBar(content: Text('Comando Windows copiado')),
+                                );
+                              },
+                              icon: const Icon(Icons.terminal_rounded),
+                              label: const Text('Copiar comando Win'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                unawaited(Clipboard.setData(ClipboardData(text: linuxCommand(created!.token))));
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  const SnackBar(content: Text('Comando Linux copiado')),
+                                );
+                              },
+                              icon: const Icon(Icons.computer_rounded),
+                              label: const Text('Copiar comando Linux'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () => verifyAgentConnected(setStateDialog),
+                              icon: const Icon(Icons.wifi_protected_setup_rounded),
+                              label: const Text('Verificar conexion'),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      const Text('Tokens recientes', style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      if (loadingTokens)
+                        const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else if (tokens.isEmpty)
+                        const Text('No hay tokens aun')
+                      else
+                        ...tokens.take(8).map((t) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('Token #${t.id} · usos ${t.usedCount}/${t.maxUses}'),
+                              subtitle: Text(
+                                t.isConsumed
+                                    ? 'Consumido'
+                                    : 'Expira: ${t.expiresAt.toLocal().toIso8601String().substring(0, 19)}',
+                              ),
+                              trailing: t.isConsumed
+                                  ? const Icon(Icons.lock_clock_outlined, size: 18)
+                                  : IconButton(
+                                      tooltip: 'Revocar',
+                                      onPressed: () async {
+                                        await _deviceService.revokeEnrollmentToken(
+                                          organizationId: selectedOrg.id,
+                                          tokenId: t.id,
+                                        );
+                                        await reloadTokens(setStateDialog);
+                                      },
+                                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                                    ),
+                            )),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cerrar')),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -164,6 +466,11 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
             onNavigateSettings: () => context.push('/settings'),
             onNavigateRuns: () => context.push('/runs', extra: _devices),
             onRefresh: () => setState(() => _future = _load()),
+            onAddDevice: _openEnrollmentDialog,
+            organizations: _organizations,
+            selectedOrganizationId: _selectedOrganizationId,
+            onSelectOrganization: _onSelectOrganization,
+            membership: _selectedMembership,
           ),
           Expanded(
             child: AnimatedSwitcher(
@@ -246,16 +553,54 @@ class _DevicesPageState extends ConsumerState<DevicesPage> {
     final secondary = isLight ? AppColors.lightTextSecondary : AppColors.textSecondary;
     return SafeArea(
       bottom: false,
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.menu_rounded, color: secondary),
-          const SizedBox(width: 10),
-          Text('Dispositivos', style: TextStyle(color: titleColor, fontSize: 29, fontWeight: FontWeight.w700, letterSpacing: -0.25)),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => setState(() => _future = _load()),
-            child: Icon(Icons.add, color: secondary, size: 22),
+          Row(
+            children: [
+              Icon(Icons.menu_rounded, color: secondary),
+              const SizedBox(width: 10),
+              Text('Dispositivos', style: TextStyle(color: titleColor, fontSize: 29, fontWeight: FontWeight.w700, letterSpacing: -0.25)),
+              const Spacer(),
+              GestureDetector(
+                onTap: _openEnrollmentDialog,
+                child: Icon(Icons.add, color: secondary, size: 22),
+              ),
+            ],
           ),
+          if (_organizations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: isLight ? AppColors.lightSurface : AppColors.surfaceBase,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isLight ? AppColors.lightBorder : AppColors.borderSubtle),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _selectedOrganizationId ?? _organizations.first.id,
+                  isDense: true,
+                  icon: Icon(Icons.keyboard_arrow_down_rounded, color: secondary),
+                  items: _organizations
+                      .map((o) => DropdownMenuItem<int>(value: o.id, child: Text(o.name, style: TextStyle(color: titleColor, fontSize: 12))))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    unawaited(_onSelectOrganization(v));
+                  },
+                ),
+              ),
+            ),
+            if (_selectedMembership != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Rol: ${_selectedMembership!.role} · Org: ${_selectedMembership!.organizationName}',
+                style: TextStyle(color: secondary, fontSize: 11.5, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -572,6 +917,11 @@ class _DeviceSidebar extends StatelessWidget {
     required this.onNavigateSettings,
     required this.onNavigateRuns,
     required this.onRefresh,
+    required this.onAddDevice,
+    required this.organizations,
+    required this.selectedOrganizationId,
+    required this.onSelectOrganization,
+    required this.membership,
   });
 
   final List<Device> devices;
@@ -587,6 +937,11 @@ class _DeviceSidebar extends StatelessWidget {
   final VoidCallback onNavigateSettings;
   final VoidCallback onNavigateRuns;
   final VoidCallback onRefresh;
+  final VoidCallback onAddDevice;
+  final List<OrganizationItem> organizations;
+  final int? selectedOrganizationId;
+  final ValueChanged<int> onSelectOrganization;
+  final OrganizationMembershipItem? membership;
 
   @override
   Widget build(BuildContext context) {
@@ -619,6 +974,37 @@ class _DeviceSidebar extends StatelessWidget {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.3),
                   ),
                 ),
+                if (organizations.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    child: SizedBox(
+                      height: 32,
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selectedOrganizationId ?? organizations.first.id,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          filled: true,
+                          fillColor: AppColors.surfaceBase,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: AppColors.borderSubtle),
+                          ),
+                        ),
+                        dropdownColor: AppColors.surfaceBase,
+                        items: organizations
+                            .map((o) => DropdownMenuItem<int>(
+                                  value: o.id,
+                                  child: Text(o.name, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary)),
+                                ))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          onSelectOrganization(v);
+                        },
+                      ),
+                    ),
+                  ),
                 // Search
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -661,7 +1047,7 @@ class _DeviceSidebar extends StatelessWidget {
                       const Text('DISPOSITIVOS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.8)),
                       const Spacer(),
                       GestureDetector(
-                        onTap: onRefresh,
+                        onTap: onAddDevice,
                         child: Container(
                           width: 20, height: 20,
                           decoration: BoxDecoration(color: AppColors.surfaceBase, borderRadius: BorderRadius.circular(5)),
@@ -705,12 +1091,18 @@ class _DeviceSidebar extends StatelessWidget {
                         child: const Center(child: Text('AD', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
                       ),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Administrador', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                            Text('admin@controlcenter.io', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                            Text(
+                              membership == null ? 'Sin membresia' : 'Rol: ${membership!.role}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                            ),
+                            Text(
+                              membership == null ? '—' : membership!.organizationName,
+                              style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+                            ),
                           ],
                         ),
                       ),

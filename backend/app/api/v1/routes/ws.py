@@ -27,6 +27,7 @@ from app.services.action_service import get_run_by_request_id, mark_run_result
 from app.services.agent_security_service import assert_nonce_unused, verify_handshake_signature
 from app.services.audit_service import create_audit_log
 from app.services.device_service import get_device, register_heartbeat, store_device_metric, verify_agent_key
+from app.services.organization_service import list_user_memberships, require_membership_or_403
 from app.services.ws_hub import ws_hub
 
 
@@ -69,6 +70,22 @@ async def ws_client(websocket: WebSocket) -> None:
         user = get_user_from_access_token(token, db)
         role_name = user.role.name if user.role else ""
         user_id = user.id
+        org_id_raw = websocket.query_params.get("organization_id")
+        if org_id_raw:
+            try:
+                active_org_id = int(org_id_raw)
+            except ValueError:
+                db.close()
+                await websocket.close(code=4400)
+                return
+            require_membership_or_403(db, user_id, active_org_id)
+        else:
+            memberships = list_user_memberships(db, user_id)
+            if not memberships:
+                db.close()
+                await websocket.close(code=4403)
+                return
+            active_org_id = memberships[0].organization_id
     except Exception as exc:
         db.close()
         print(f"WS auth failed: {exc}")
@@ -87,6 +104,12 @@ async def ws_client(websocket: WebSocket) -> None:
                     await websocket.send_json({"type": "server.error", "detail": "Terminal requires admin role"})
                     continue
                 msg = ClientTerminalStartMessage.model_validate(raw)
+                db = SessionLocal()
+                device = get_device(db, msg.data.device_id, active_org_id)
+                db.close()
+                if not device:
+                    await websocket.send_json({"type": "server.error", "detail": "Device not found"})
+                    continue
                 if not ws_hub.is_agent_connected(msg.data.device_id):
                     await websocket.send_json({"type": "server.error", "detail": "Device agent is offline"})
                     continue
@@ -118,6 +141,18 @@ async def ws_client(websocket: WebSocket) -> None:
                         "data": {"session_id": session_id},
                     }
                 )
+                db = SessionLocal()
+                create_audit_log(
+                    db,
+                    organization_id=active_org_id,
+                    event_type="terminal.session.started",
+                    actor_user_id=user_id,
+                    target_type="device",
+                    target_id=str(msg.data.device_id),
+                    details=f"session_id={session_id}",
+                )
+                db.commit()
+                db.close()
             elif msg_type == "client.terminal.input":
                 msg = ClientTerminalInputMessage.model_validate(raw)
                 session = terminal_sessions.get(msg.data.session_id)
@@ -154,11 +189,29 @@ async def ws_client(websocket: WebSocket) -> None:
                 )
                 terminal_sessions.pop(session.session_id, None)
                 await websocket.send_json({"type": "server.terminal.stopped", "data": {"session_id": msg.data.session_id}})
+                db = SessionLocal()
+                create_audit_log(
+                    db,
+                    organization_id=active_org_id,
+                    event_type="terminal.session.stopped",
+                    actor_user_id=user_id,
+                    target_type="device",
+                    target_id=str(session.device_id),
+                    details=f"session_id={session.session_id}",
+                )
+                db.commit()
+                db.close()
             elif msg_type == "client.ai.start":
                 if role_name != "admin":
                     await websocket.send_json({"type": "server.error", "detail": "AI requires admin role"})
                     continue
                 msg = ClientAiStartMessage.model_validate(raw)
+                db = SessionLocal()
+                device = get_device(db, msg.data.device_id, active_org_id)
+                db.close()
+                if not device:
+                    await websocket.send_json({"type": "server.error", "detail": "Device not found"})
+                    continue
                 if not ws_hub.is_agent_connected(msg.data.device_id):
                     await websocket.send_json({"type": "server.error", "detail": "Device agent is offline"})
                     continue
@@ -193,6 +246,18 @@ async def ws_client(websocket: WebSocket) -> None:
                         "data": {"session_id": session_id, "provider": msg.data.provider, "mode": msg.data.mode},
                     }
                 )
+                db = SessionLocal()
+                create_audit_log(
+                    db,
+                    organization_id=active_org_id,
+                    event_type="ai.session.started",
+                    actor_user_id=user_id,
+                    target_type="device",
+                    target_id=str(msg.data.device_id),
+                    details=f"session_id={session_id}; provider={msg.data.provider}; mode={msg.data.mode}",
+                )
+                db.commit()
+                db.close()
             elif msg_type == "client.ai.message":
                 msg = ClientAiMessage.model_validate(raw)
                 session = ai_sessions.get(msg.data.session_id)
@@ -231,6 +296,18 @@ async def ws_client(websocket: WebSocket) -> None:
                     },
                 )
                 await websocket.send_json({"type": "server.ai.stopped", "data": {"session_id": msg.data.session_id}})
+                db = SessionLocal()
+                create_audit_log(
+                    db,
+                    organization_id=active_org_id,
+                    event_type="ai.session.stopped",
+                    actor_user_id=user_id,
+                    target_type="device",
+                    target_id=str(session.device_id),
+                    details=f"session_id={session.session_id}",
+                )
+                db.commit()
+                db.close()
     except WebSocketDisconnect:
         stale = [sid for sid, session in terminal_sessions.items() if session.client_ws is websocket]
         for sid in stale:
@@ -288,7 +365,13 @@ async def ws_agent(websocket: WebSocket) -> None:
         return
 
     register_heartbeat(device)
-    create_audit_log(db, event_type="agent.ws.connected", target_type="device", target_id=str(device.id))
+    create_audit_log(
+        db,
+        organization_id=device.organization_id,
+        event_type="agent.ws.connected",
+        target_type="device",
+        target_id=str(device.id),
+    )
     db.commit()
     db.close()
 
@@ -499,7 +582,13 @@ async def ws_agent(websocket: WebSocket) -> None:
         device = get_device(db, device_id)
         if device:
             device.is_online = False
-            create_audit_log(db, event_type="agent.ws.disconnected", target_type="device", target_id=str(device.id))
+            create_audit_log(
+                db,
+                organization_id=device.organization_id,
+                event_type="agent.ws.disconnected",
+                target_type="device",
+                target_id=str(device.id),
+            )
             db.commit()
         db.close()
         await ws_hub.broadcast_to_clients(

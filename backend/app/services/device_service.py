@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.device import Device
 from app.models.device_metric import DeviceMetric
+from app.models.organization_member import OrganizationMember
 from app.models.user import User
 from app.schemas.device import DeviceCreateRequest, DeviceUpdateRequest
 
@@ -18,7 +19,7 @@ def verify_agent_key(device: Device, raw_agent_key: str) -> bool:
     return device.agent_key_hash == _hash_agent_key(raw_agent_key)
 
 
-def create_device(db: Session, payload: DeviceCreateRequest, user: User) -> Device:
+def create_device(db: Session, payload: DeviceCreateRequest, user: User, membership: OrganizationMember) -> Device:
     device = Device(
         name=payload.name,
         host_type=payload.host_type,
@@ -26,17 +27,22 @@ def create_device(db: Session, payload: DeviceCreateRequest, user: User) -> Devi
         agent_version=payload.agent_version,
         agent_key_hash=_hash_agent_key(payload.agent_key),
         created_by_user_id=user.id,
+        organization_id=membership.organization_id,
     )
     db.add(device)
     return device
 
 
-def list_devices(db: Session) -> list[Device]:
-    return list(db.scalars(select(Device).order_by(Device.id.desc())))
+def list_devices(db: Session, organization_id: int) -> list[Device]:
+    query = select(Device).where(Device.organization_id == organization_id).order_by(Device.id.desc())
+    return list(db.scalars(query))
 
 
-def get_device(db: Session, device_id: int) -> Device | None:
-    return db.get(Device, device_id)
+def get_device(db: Session, device_id: int, organization_id: int | None = None) -> Device | None:
+    if organization_id is None:
+        return db.get(Device, device_id)
+    query = select(Device).where(Device.id == device_id, Device.organization_id == organization_id)
+    return db.scalar(query)
 
 
 def update_device(db: Session, device: Device, payload: DeviceUpdateRequest) -> Device:

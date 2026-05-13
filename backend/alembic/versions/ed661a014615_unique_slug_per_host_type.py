@@ -15,10 +15,62 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("uq_actions_catalog_slug", "actions_catalog", type_="unique")
-    op.create_unique_constraint("uq_slug_host", "actions_catalog", ["slug", "host_type"])
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_actions_catalog_slug'
+            ) THEN
+                ALTER TABLE actions_catalog DROP CONSTRAINT uq_actions_catalog_slug;
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_slug_host'
+            ) THEN
+                ALTER TABLE actions_catalog ADD CONSTRAINT uq_slug_host UNIQUE (slug, host_type);
+            END IF;
+        END $$;
+        """
+    )
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_slug_host", "actions_catalog", type_="unique")
-    op.create_unique_constraint("uq_actions_catalog_slug", "actions_catalog", ["slug"])
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_slug_host'
+            ) THEN
+                ALTER TABLE actions_catalog DROP CONSTRAINT uq_slug_host;
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_actions_catalog_slug'
+            ) THEN
+                ALTER TABLE actions_catalog ADD CONSTRAINT uq_actions_catalog_slug UNIQUE (slug);
+            END IF;
+        END $$;
+        """
+    )

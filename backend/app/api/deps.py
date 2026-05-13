@@ -1,11 +1,16 @@
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.organization_member import OrganizationMember
 from app.models.user import User
+from app.services.organization_service import (
+    list_user_memberships,
+    require_membership_or_403 as require_membership_or_403_service,
+)
 
 
 bearer_scheme = HTTPBearer(auto_error=True)
@@ -38,5 +43,32 @@ def require_role(*allowed_roles: str):
         if user.role is None or user.role.name not in allowed_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
+
+    return _checker
+
+
+def get_current_membership(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    x_organization_id: int | None = Header(default=None),
+) -> OrganizationMember:
+    if x_organization_id is not None:
+        return require_membership_or_403_service(db, user.id, x_organization_id)
+
+    memberships = list_user_memberships(db, user.id)
+    if not memberships:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has no active organization")
+    return memberships[0]
+
+
+def require_membership_or_403(db: Session, user_id: int, organization_id: int) -> OrganizationMember:
+    return require_membership_or_403_service(db, user_id, organization_id)
+
+
+def require_org_role(*allowed_roles: str):
+    def _checker(membership: OrganizationMember = Depends(get_current_membership)) -> OrganizationMember:
+        if membership.role not in allowed_roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient organization permissions")
+        return membership
 
     return _checker

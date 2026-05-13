@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, Setup2FARequest, Setup2FAResponse, TokenPairResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, Setup2FARequest, Setup2FAResponse, TokenPairResponse
 from app.services.audit_service import create_audit_log
 from app.services.auth_service import (
     authenticate_user,
@@ -11,6 +11,7 @@ from app.services.auth_service import (
     verify_user_credentials,
     revoke_refresh_token,
     rotate_refresh_token,
+    register_user,
     setup_totp_for_user,
 )
 from app.services.rate_limit_service import enforce_auth_rate_limit
@@ -18,6 +19,21 @@ from app.services.rate_limit_service import clear_login_failures, enforce_login_
 
 
 router = APIRouter()
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
+    enforce_auth_rate_limit(request.client.host if request.client else "unknown", "register")
+    user = register_user(db, payload)
+    create_audit_log(
+        db,
+        event_type="auth.registered",
+        actor_user_id=user.id,
+        source_ip=request.client.host if request.client else None,
+        details=f"email={user.email}",
+    )
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/login", response_model=TokenPairResponse)
