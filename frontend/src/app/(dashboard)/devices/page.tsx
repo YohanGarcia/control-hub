@@ -5,16 +5,19 @@ import { useDevices } from "@/hooks/useDevices"
 import { DeviceCard } from "@/components/devices/device-card"
 import { LoadingSpinner } from "@/components/shared/loading-spinner"
 import { EmptyState } from "@/components/shared/empty-state"
-import { Monitor, Filter, Search } from "lucide-react"
+import { DeviceForm } from "@/components/forms/device-form"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Monitor, Search } from "lucide-react"
 import { useUIStore } from "@/stores/uiStore"
 import { cn } from "@/lib/utils"
 
 export default function DevicesPage() {
-  const { data: devices, isLoading } = useDevices()
+  const { data: devices, isLoading, refetch } = useDevices()
   const { sidebarCollapsed } = useUIStore()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all")
   const [hostTypeFilter, setHostTypeFilter] = useState<"all" | "windows" | "ubuntu">("all")
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const filteredDevices = devices?.filter((device) => {
     const matchesSearch = device.name.toLowerCase().includes(search.toLowerCase())
@@ -49,10 +52,14 @@ export default function DevicesPage() {
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pl-9 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-[#101827] dark:border-gray-700 dark:text-white dark:placeholder:text-gray-500"
           />
         </div>
-        <button className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-          <Monitor className="mr-2 h-4 w-4" />
-          Añadir dispositivo
-        </button>
+         <button
+           type="button"
+           onClick={() => setIsCreateOpen(true)}
+           className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+         >
+           <Monitor className="mr-2 h-4 w-4" />
+           Añadir dispositivo
+         </button>
       </div>
 
       {!filteredDevices || filteredDevices.length === 0 ? (
@@ -72,6 +79,22 @@ export default function DevicesPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Añadir dispositivo</DialogTitle>
+            <DialogDescription>Registra un nuevo dispositivo y su clave de agente.</DialogDescription>
+          </DialogHeader>
+          <DeviceForm
+            onCancel={() => setIsCreateOpen(false)}
+            onSuccess={async () => {
+              await refetch()
+              setIsCreateOpen(false)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
