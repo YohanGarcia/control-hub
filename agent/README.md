@@ -23,6 +23,27 @@ curl -fsSL https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/
 $tmp = Join-Path $env:TEMP "control-hub-install.ps1"; iwr https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/install.ps1 -OutFile $tmp; & $tmp -Server "https://control-hub-production-877a.up.railway.app" -DeviceId <ID> -AgentKey "<AGENT_KEY>"
 ```
 
+## Descargar y ejecutar despues (2 pasos)
+
+### Ubuntu / Linux
+
+```bash
+curl -fsSLo controlhub-agent.sh https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/controlhub-agent.sh
+chmod +x controlhub-agent.sh
+./controlhub-agent.sh install
+./controlhub-agent.sh configure --server https://control-hub-production-877a.up.railway.app --device-id <ID> --agent-key '<AGENT_KEY>'
+./controlhub-agent.sh start
+```
+
+### Windows (PowerShell)
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/controlhub-agent.ps1 -OutFile .\controlhub-agent.ps1
+.\controlhub-agent.ps1 install
+.\controlhub-agent.ps1 configure -Server "https://control-hub-production-877a.up.railway.app" -DeviceId <ID> -AgentKey "<AGENT_KEY>"
+.\controlhub-agent.ps1 start
+```
+
 ## Registro de dispositivo
 
 Usa la API del backend para registrar un dispositivo y obtener la clave del agente:
