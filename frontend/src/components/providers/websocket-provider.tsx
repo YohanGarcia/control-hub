@@ -13,7 +13,7 @@ interface WebSocketMessage {
 interface WebSocketContextValue {
   isConnected: boolean
   reconnectAttempts: number
-  connect: (organizationId?: number) => void
+  connect: (organizationId?: number) => Promise<void>
   disconnect: () => void
   sendMessage: (message: unknown) => void
   onMessage: (handler: (message: WebSocketMessage) => void) => () => void
@@ -22,18 +22,45 @@ interface WebSocketContextValue {
 const WebSocketContext = createContext<WebSocketContextValue | null>(null)
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const { accessToken } = useAuthStore()
+  const { accessToken, refreshSession } = useAuthStore()
   const [isConnected, setIsConnected] = useState(false)
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const [isConnecting, setIsConnecting] = useState(false)
 
+  const isTokenExpired = (token: string) => {
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1])) as { exp?: number }
+      if (!payload.exp) return true
+      return payload.exp * 1000 <= Date.now() + 5000
+    } catch {
+      return true
+    }
+  }
+
   const connect = useCallback(
-    (organizationId?: number) => {
+    async (organizationId?: number) => {
       if (!accessToken || isConnected || isConnecting || wsClient.isConnected) return
+
       setIsConnecting(true)
-      wsClient.connect(accessToken, organizationId)
+
+      let tokenToUse = accessToken
+      if (isTokenExpired(tokenToUse)) {
+        try {
+          await refreshSession()
+        } catch {
+          setIsConnecting(false)
+          return
+        }
+        tokenToUse = useAuthStore.getState().accessToken ?? ""
+        if (!tokenToUse) {
+          setIsConnecting(false)
+          return
+        }
+      }
+
+      wsClient.connect(tokenToUse, organizationId)
     },
-    [accessToken, isConnected, isConnecting]
+    [accessToken, isConnected, isConnecting, refreshSession]
   )
 
   const disconnect = useCallback(() => {

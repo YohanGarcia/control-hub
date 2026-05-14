@@ -85,15 +85,7 @@ def get_device_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
     metric = get_latest_metric(db, device_id)
-    latest_metric = None
-    if metric:
-        latest_metric = {
-            "cpu_percent": metric.cpu_percent,
-            "ram_percent": metric.ram_percent,
-            "disk_percent": metric.disk_percent,
-            "uptime_seconds": metric.uptime_seconds,
-            "created_at": metric.created_at.isoformat(),
-        }
+    latest_metric = DeviceMetricResponse.model_validate(metric) if metric else None
 
     return DeviceStatusResponse(device=DeviceResponse.model_validate(device), latest_metric=latest_metric)
 

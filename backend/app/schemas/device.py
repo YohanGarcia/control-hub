@@ -28,16 +28,24 @@ class DeviceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DeviceStatusResponse(BaseModel):
-    device: DeviceResponse
-    latest_metric: dict[str, float | str] | None
-
-
 class DeviceMetricResponse(BaseModel):
     cpu_percent: float
     ram_percent: float
     disk_percent: float
+    cpu_min: float | None = None
+    cpu_max: float | None = None
+    ram_min: float | None = None
+    ram_max: float | None = None
+    disk_min: float | None = None
+    disk_max: float | None = None
+    sample_count: int = 1
+    window_seconds: int = 1
     uptime_seconds: float
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DeviceStatusResponse(BaseModel):
+    device: DeviceResponse
+    latest_metric: DeviceMetricResponse | None

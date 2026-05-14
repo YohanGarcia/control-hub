@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -56,6 +57,44 @@ class AiSession:
 
 
 ai_sessions: dict[str, AiSession] = {}
+
+
+@dataclass
+class MetricWindow:
+    started_at: datetime
+    cpu_values: list[float]
+    ram_values: list[float]
+    disk_values: list[float]
+    last_uptime_seconds: float
+
+
+metric_windows: dict[int, MetricWindow] = {}
+METRIC_PERSIST_WINDOW_SECONDS = 5
+
+
+def _flush_metric_window(db, device, device_id: int) -> None:
+    window = metric_windows.get(device_id)
+    if not window or not window.cpu_values:
+        return
+
+    sample_count = len(window.cpu_values)
+    store_device_metric(
+        db,
+        device=device,
+        cpu_percent=sum(window.cpu_values) / sample_count,
+        ram_percent=sum(window.ram_values) / sample_count,
+        disk_percent=sum(window.disk_values) / sample_count,
+        uptime_seconds=window.last_uptime_seconds,
+        cpu_min=min(window.cpu_values),
+        cpu_max=max(window.cpu_values),
+        ram_min=min(window.ram_values),
+        ram_max=max(window.ram_values),
+        disk_min=min(window.disk_values),
+        disk_max=max(window.disk_values),
+        sample_count=sample_count,
+        window_seconds=METRIC_PERSIST_WINDOW_SECONDS,
+    )
+    metric_windows.pop(device_id, None)
 
 
 @router.websocket("/ws/client")
@@ -410,25 +449,37 @@ async def ws_agent(websocket: WebSocket) -> None:
                     await websocket.send_json({"type": "server.ack", "event": "agent.heartbeat"})
                 elif msg_type == "agent.metrics.push":
                     msg = AgentMetricsMessage.model_validate(raw)
-                    metric = store_device_metric(
-                        db,
-                        device=device,
-                        cpu_percent=msg.data.cpu_percent,
-                        ram_percent=msg.data.ram_percent,
-                        disk_percent=msg.data.disk_percent,
-                        uptime_seconds=msg.data.uptime_seconds,
-                    )
-                    db.commit()
+                    now = datetime.now(timezone.utc)
+                    window = metric_windows.get(device_id)
+                    if not window:
+                        window = MetricWindow(
+                            started_at=now,
+                            cpu_values=[],
+                            ram_values=[],
+                            disk_values=[],
+                            last_uptime_seconds=msg.data.uptime_seconds,
+                        )
+                        metric_windows[device_id] = window
+
+                    window.cpu_values.append(msg.data.cpu_percent)
+                    window.ram_values.append(msg.data.ram_percent)
+                    window.disk_values.append(msg.data.disk_percent)
+                    window.last_uptime_seconds = msg.data.uptime_seconds
+
+                    if (now - window.started_at).total_seconds() >= METRIC_PERSIST_WINDOW_SECONDS:
+                        _flush_metric_window(db, device, device_id)
+                        db.commit()
+
                     await ws_hub.broadcast_to_clients(
                         {
                             "type": "client.device.metric.updated",
                             "device_id": device_id,
                             "metric": {
-                                "cpu_percent": metric.cpu_percent,
-                                "ram_percent": metric.ram_percent,
-                                "disk_percent": metric.disk_percent,
-                                "uptime_seconds": metric.uptime_seconds,
-                                "created_at": metric.created_at.isoformat(),
+                                "cpu_percent": msg.data.cpu_percent,
+                                "ram_percent": msg.data.ram_percent,
+                                "disk_percent": msg.data.disk_percent,
+                                "uptime_seconds": msg.data.uptime_seconds,
+                                "created_at": now.isoformat(),
                             },
                         }
                     )
@@ -577,6 +628,13 @@ async def ws_agent(websocket: WebSocket) -> None:
             finally:
                 db.close()
     except WebSocketDisconnect:
+        db = SessionLocal()
+        device = get_device(db, device_id)
+        if device:
+            _flush_metric_window(db, device, device_id)
+            db.commit()
+        db.close()
+
         ws_hub.disconnect_agent(device_id)
         db = SessionLocal()
         device = get_device(db, device_id)

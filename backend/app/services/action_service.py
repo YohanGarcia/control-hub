@@ -19,7 +19,17 @@ def validate_action_params(action_slug: str, params: dict) -> dict:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="service_name is required")
         return {"service_name": service_name.strip()}
 
-    if action_slug in {"update_system", "run_backup", "cleanup_tmp", "check_docker", "list_files"}:
+    if action_slug in {
+        "update_system",
+        "run_backup",
+        "cleanup_tmp",
+        "check_docker",
+        "list_files",
+        "agent_service_status",
+        "agent_service_start",
+        "agent_service_stop",
+        "agent_service_restart",
+    }:
         if params:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="This action does not accept params")
         return {}

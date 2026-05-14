@@ -18,7 +18,14 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 def get_user_from_access_token(token: str, db: Session) -> User:
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
+            leeway=settings.jwt_clock_skew_seconds,
+        )
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
 

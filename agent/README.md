@@ -44,6 +44,42 @@ Invoke-WebRequest https://raw.githubusercontent.com/YohanGarcia/control-hub/main
 .\controlhub-agent.ps1 start
 ```
 
+Si PowerShell bloquea scripts por ExecutionPolicy, usa el launcher `.cmd` (evita el bloqueo):
+
+```bat
+controlhub-agent.cmd install
+controlhub-agent.cmd configure -Server "https://control-hub-production-877a.up.railway.app" -DeviceId <ID> -AgentKey "<AGENT_KEY>"
+controlhub-agent.cmd start
+```
+
+### Windows Service (segundo plano + auto inicio)
+
+Ejecuta PowerShell como Administrador y corre:
+
+```powershell
+.\controlhub-agent.ps1 install
+.\controlhub-agent.ps1 configure -Server "https://control-hub-production-877a.up.railway.app" -DeviceId <ID> -AgentKey "<AGENT_KEY>"
+.\controlhub-agent.ps1 install-service
+.\controlhub-agent.ps1 start-service
+.\controlhub-agent.ps1 status
+```
+
+Alternativa sin bloqueo de scripts:
+
+```bat
+controlhub-agent.cmd install-service
+controlhub-agent.cmd start-service
+controlhub-agent.cmd status
+```
+
+Comandos utiles del servicio:
+
+```powershell
+.\controlhub-agent.ps1 restart-service
+.\controlhub-agent.ps1 stop-service
+.\controlhub-agent.ps1 uninstall-service
+```
+
 ## Registro de dispositivo
 
 Usa la API del backend para registrar un dispositivo y obtener la clave del agente:

@@ -90,12 +90,28 @@ def store_device_metric(
     ram_percent: float,
     disk_percent: float,
     uptime_seconds: float,
+    cpu_min: float | None = None,
+    cpu_max: float | None = None,
+    ram_min: float | None = None,
+    ram_max: float | None = None,
+    disk_min: float | None = None,
+    disk_max: float | None = None,
+    sample_count: int = 1,
+    window_seconds: int = 1,
 ) -> DeviceMetric:
     metric = DeviceMetric(
         device_id=device.id,
         cpu_percent=cpu_percent,
         ram_percent=ram_percent,
         disk_percent=disk_percent,
+        cpu_min=cpu_min,
+        cpu_max=cpu_max,
+        ram_min=ram_min,
+        ram_max=ram_max,
+        disk_min=disk_min,
+        disk_max=disk_max,
+        sample_count=sample_count,
+        window_seconds=window_seconds,
         uptime_seconds=uptime_seconds,
     )
     device.is_online = True

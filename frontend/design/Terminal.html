@@ -1,0 +1,2325 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Control Center · Terminal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #07091322;
+    --bg-1: #0a0e1a;
+    --bg-2: #0f1424;
+    --bg-3: #131a2e;
+    --bg-4: #1a2238;
+    --line: #1f2940;
+    --line-strong: #2a3654;
+    --text: #e6ebf5;
+    --text-2: #aab3c8;
+    --text-3: #6b7591;
+    --text-4: #4a5475;
+    --blue: #3b82f6;
+    --blue-2: #60a5fa;
+    --violet: #8b5cf6;
+    --violet-2: #a78bfa;
+    --green: #22c55e;
+    --green-2: #4ade80;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --pink: #ec4899;
+    --cyan: #06b6d4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg-1); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  body { background:
+    radial-gradient(900px 600px at 12% 0%, rgba(59,130,246,0.10), transparent 60%),
+    radial-gradient(900px 600px at 88% 110%, rgba(139,92,246,0.10), transparent 60%),
+    var(--bg-1);
+  }
+  ::selection { background: rgba(59,130,246,0.35); color: #fff; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+
+  /* scrollbar */
+  .scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroll::-webkit-scrollbar-thumb { background: #1c2542; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: #283357; background-clip: padding-box; border: 2px solid transparent; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+
+  /* caret */
+  @keyframes caret { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+  .caret { display: inline-block; width: 8px; height: 16px; background: var(--green); vertical-align: -3px; margin-left: 2px; animation: caret 1s steps(2,end) infinite; box-shadow: 0 0 10px rgba(34,197,94,0.7); border-radius: 1px; }
+
+  @keyframes pulse-dot { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); } 50% { box-shadow: 0 0 0 5px rgba(34,197,94,0); } }
+  .pulse { animation: pulse-dot 2s infinite; }
+
+  @keyframes shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+
+  /* connection bar */
+  @keyframes flow { 0% { transform: translateX(-100%);} 100% { transform: translateX(100%);} }
+
+  /* spark */
+  @keyframes drift { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -200; } }
+
+  /* fade in for new log lines */
+  @keyframes lineIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+  .line-in { animation: lineIn 240ms ease-out both; }
+
+  button { font-family: inherit; }
+
+  .glass {
+    background: linear-gradient(180deg, rgba(20,27,49,0.72), rgba(13,18,34,0.72));
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--line);
+  }
+
+  .ring-blue:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/* =========================================================
+   ICONS (inline SVGs, minimalist)
+   ========================================================= */
+const Icon = ({ name, size = 16, stroke = 1.6, className = "", style }) => {
+  const s = { width: size, height: size, ...(style||{}) };
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: stroke, strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (name) {
+    case 'logo': return (
+      <svg viewBox="0 0 24 24" style={s} className={className}>
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#60a5fa"/><stop offset="1" stopColor="#8b5cf6"/>
+          </linearGradient>
+        </defs>
+        <path d="M4 7 L12 3 L20 7 L20 17 L12 21 L4 17 Z" fill="url(#lg)" opacity="0.18" stroke="url(#lg)" strokeWidth="1.6"/>
+        <path d="M4 7 L12 11 L20 7" stroke="url(#lg)" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M12 11 L12 21" stroke="url(#lg)" strokeWidth="1.6" strokeLinecap="round"/>
+      </svg>
+    );
+    case 'terminal': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M4 6h16v12H4z"/><path {...common} d="M7 10l3 2-3 2"/><path {...common} d="M13 14h4"/></svg>;
+    case 'dashboard': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg>;
+    case 'chart': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M3 20V4M3 20h18"/><path {...common} d="M7 16l4-5 3 3 5-7"/></svg>;
+    case 'bell': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M6 8a6 6 0 0112 0c0 7 3 7 3 9H3c0-2 3-2 3-9z"/><path {...common} d="M10 21a2 2 0 004 0"/></svg>;
+    case 'gear': return <svg viewBox="0 0 24 24" style={s} className={className}><circle {...common} cx="12" cy="12" r="3"/><path {...common} d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1A2 2 0 113.4 17l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.8L3.2 7a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H8a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1A2 2 0 1120.8 7l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>;
+    case 'search': return <svg viewBox="0 0 24 24" style={s} className={className}><circle {...common} cx="11" cy="11" r="7"/><path {...common} d="M21 21l-4.3-4.3"/></svg>;
+    case 'plus': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 5v14M5 12h14"/></svg>;
+    case 'close': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M6 6l12 12M18 6L6 18"/></svg>;
+    case 'chevron-down': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M6 9l6 6 6-6"/></svg>;
+    case 'chevron-right': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M9 6l6 6-6 6"/></svg>;
+    case 'server': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="3" y="4" width="18" height="7" rx="1.5"/><rect {...common} x="3" y="13" width="18" height="7" rx="1.5"/><path {...common} d="M7 7.5h.01M7 16.5h.01"/></svg>;
+    case 'database': return <svg viewBox="0 0 24 24" style={s} className={className}><ellipse {...common} cx="12" cy="5" rx="8" ry="3"/><path {...common} d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path {...common} d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>;
+    case 'globe': return <svg viewBox="0 0 24 24" style={s} className={className}><circle {...common} cx="12" cy="12" r="9"/><path {...common} d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg>;
+    case 'cube': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path {...common} d="M4 7.5L12 12l8-4.5M12 12v9"/></svg>;
+    case 'code': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M8 8l-4 4 4 4M16 8l4 4-4 4M14 4l-4 16"/></svg>;
+    case 'archive': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="3" y="3" width="18" height="5" rx="1"/><path {...common} d="M5 8v12a1 1 0 001 1h12a1 1 0 001-1V8M10 12h4"/></svg>;
+    case 'split': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="3" y="4" width="18" height="16" rx="2"/><path {...common} d="M12 4v16"/></svg>;
+    case 'sidebar': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="3" y="4" width="18" height="16" rx="2"/><path {...common} d="M9 4v16"/></svg>;
+    case 'expand': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M4 10V4h6M20 14v6h-6M20 10V4h-6M4 14v6h6"/></svg>;
+    case 'trash': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13"/></svg>;
+    case 'copy': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="9" y="9" width="12" height="12" rx="2"/><path {...common} d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/></svg>;
+    case 'download': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 4v12M6 12l6 6 6-6M4 20h16"/></svg>;
+    case 'lock': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="4" y="11" width="16" height="9" rx="2"/><path {...common} d="M8 11V7a4 4 0 018 0v4"/></svg>;
+    case 'cpu': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="5" y="5" width="14" height="14" rx="2"/><rect {...common} x="9" y="9" width="6" height="6"/><path {...common} d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>;
+    case 'ram': return <svg viewBox="0 0 24 24" style={s} className={className}><rect {...common} x="3" y="8" width="18" height="9" rx="1"/><path {...common} d="M6 17v2M10 17v2M14 17v2M18 17v2M7 11h2M11 11h2M15 11h2"/></svg>;
+    case 'wifi': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M2 9a16 16 0 0120 0M5 13a11 11 0 0114 0M8.5 16.5a6 6 0 017 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>;
+    case 'play': return <svg viewBox="0 0 24 24" style={s} className={className}><path d="M6 4l14 8-14 8V4z" fill="currentColor"/></svg>;
+    case 'pause': return <svg viewBox="0 0 24 24" style={s} className={className}><rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/></svg>;
+    case 'refresh': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M4 12a8 8 0 0114-5.3L20 8M20 4v4h-4M20 12a8 8 0 01-14 5.3L4 16M4 20v-4h4"/></svg>;
+    case 'check': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M5 12l4 4 10-10"/></svg>;
+    case 'warn': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 3l10 18H2L12 3z"/><path {...common} d="M12 10v5M12 18h.01"/></svg>;
+    case 'shield': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>;
+    case 'kbd-enter': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M20 6v6a3 3 0 01-3 3H5"/><path {...common} d="M9 11l-4 4 4 4"/></svg>;
+    case 'more': return <svg viewBox="0 0 24 24" style={s} className={className}><circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/></svg>;
+    case 'branch': return <svg viewBox="0 0 24 24" style={s} className={className}><circle {...common} cx="6" cy="5" r="2"/><circle {...common} cx="6" cy="19" r="2"/><circle {...common} cx="18" cy="12" r="2"/><path {...common} d="M6 7v10M6 13c0-3 4-3 4-6"/><path {...common} d="M10 7h6"/></svg>;
+    case 'folder': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>;
+    case 'history': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M3 12a9 9 0 109-9 9 9 0 00-9 9z"/><path {...common} d="M3 3v6h6"/><path {...common} d="M12 7v5l3 3"/></svg>;
+    case 'star': return <svg viewBox="0 0 24 24" style={s} className={className}><path {...common} d="M12 3l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>;
+    default: return null;
+  }
+};
+
+/* =========================================================
+   DATA
+   ========================================================= */
+const SERVERS = [
+  { id: 'srv-01', name: 'Servidor-01', icon: 'server', host: 'root@srv-01', ip: '192.168.1.10', os: 'Ubuntu 22.04 LTS', region: 'us-east-1', status: 'online', latency: 12, uptime: '15d 6h 24m' },
+  { id: 'srv-02', name: 'Servidor-02', icon: 'server', host: 'root@srv-02', ip: '192.168.1.11', os: 'Debian 12', region: 'us-east-1', status: 'online', latency: 18, uptime: '8d 2h 11m' },
+  { id: 'srv-03', name: 'Servidor-03', icon: 'database', host: 'root@srv-03', ip: '10.0.4.21', os: 'Rocky 9', region: 'eu-west-2', status: 'warning', latency: 64, uptime: '32d 1h 49m' },
+  { id: 'db-prod', name: 'DB-Principal', icon: 'database', host: 'postgres@db-prod', ip: '10.0.2.7', os: 'Ubuntu 22.04', region: 'us-east-1', status: 'online', latency: 9, uptime: '64d 11h 03m' },
+  { id: 'web-prod', name: 'Web-Prod', icon: 'globe', host: 'deploy@web-prod', ip: '34.117.5.18', os: 'Alpine 3.20', region: 'multi', status: 'online', latency: 22, uptime: '21d 18h 41m' },
+  { id: 'backup-nas', name: 'Backup-NAS', icon: 'archive', host: 'root@nas', ip: '10.0.9.5', os: 'TrueNAS 13', region: 'us-east-1', status: 'maint', latency: 41, uptime: '—' },
+  { id: 'dev-server', name: 'Dev-Server', icon: 'code', host: 'dev@sandbox', ip: '10.0.7.42', os: 'Ubuntu 24.04', region: 'us-east-1', status: 'offline', latency: 0, uptime: '—' },
+  { id: 'edge-04', name: 'Edge-04', icon: 'cube', host: 'root@edge-04', ip: '52.18.4.9', os: 'CoreOS', region: 'ap-south-1', status: 'online', latency: 138, uptime: '4d 0h 12m' },
+];
+
+const statusMap = {
+  online: { color: 'var(--green)', label: 'En línea' },
+  warning: { color: 'var(--amber)', label: 'Advertencia' },
+  offline: { color: 'var(--red)', label: 'Desconectado' },
+  maint: { color: 'var(--blue-2)', label: 'En mantenimiento' },
+};
+
+/* Pre-baked terminal output for the active session */
+const INITIAL_LINES = [
+  { k: 'sys', t: '── Control Center · sesión SSH establecida ──' },
+  { k: 'sys', t: 'Conectado a 192.168.1.10:22 · cifrado ED25519 · región us-east-1' },
+  { k: 'sys', t: 'Última sesión: lun 13 may 2026 09:42:17 desde 10.12.0.4' },
+  { k: 'out', t: 'Bienvenido a Servidor-01 (Ubuntu 22.04 LTS · kernel 6.5.0-26)' },
+  { k: 'out', t: "Escribe 'help' para ver los comandos disponibles." },
+  { k: 'prompt', host: 'root@srv-01', path: '~', cmd: 'systemctl status nginx' },
+  { k: 'out', cls: 'g', t: '● nginx.service — A high performance web server' },
+  { k: 'out', t: '     Loaded: loaded (/lib/systemd/system/nginx.service; enabled)' },
+  { k: 'out', t: '     Active: active (running) since lun 2026-05-13 08:11:04 UTC; 1h 32min ago' },
+  { k: 'out', t: '       Docs: man:nginx(8)' },
+  { k: 'out', t: '   Main PID: 1432 (nginx)' },
+  { k: 'out', t: '      Tasks: 5 (limit: 4915)' },
+  { k: 'out', t: '     Memory: 21.4M' },
+  { k: 'out', t: '        CPU: 412ms' },
+  { k: 'out', t: '     CGroup: /system.slice/nginx.service' },
+  { k: 'out', t: '             ├─1432 nginx: master process /usr/sbin/nginx' },
+  { k: 'out', t: '             ├─1433 nginx: worker process' },
+  { k: 'out', t: '             └─1434 nginx: worker process' },
+  { k: 'prompt', host: 'root@srv-01', path: '~', cmd: 'docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"' },
+  { k: 'out', cls: 'dim', t: 'NAMES                STATUS              PORTS' },
+  { k: 'out', t: 'api-gateway          Up 2 hours          0.0.0.0:8080->8080/tcp' },
+  { k: 'out', t: 'redis-cache          Up 2 hours          6379/tcp' },
+  { k: 'out', t: 'postgres-primary     Up 2 hours          0.0.0.0:5432->5432/tcp' },
+  { k: 'out', t: 'worker-billing       Up 47 minutes       —' },
+  { k: 'out', t: 'worker-emails        Up 47 minutes       —' },
+  { k: 'prompt', host: 'root@srv-01', path: '~', cmd: 'tail -f /var/log/nginx/access.log' },
+];
+
+/* Streaming log templates */
+const STREAM_TEMPLATES = [
+  { k: 'log', sev: 'info', src: 'nginx', t: '127.0.0.1 - api [13/May/2026:11:%MIN%:%SEC%] "GET /v1/health" 200 18ms' },
+  { k: 'log', sev: 'info', src: 'api',   t: 'auth.session.created user=usr_%RID% provider=oauth duration=412ms' },
+  { k: 'log', sev: 'ok',   src: 'queue', t: 'job.completed id=jb_%RID% kind=billing.invoice attempts=1 latency=183ms' },
+  { k: 'log', sev: 'info', src: 'pgsql', t: 'AUTOVACUUM relation="events" rows_removed=2143 elapsed=312ms' },
+  { k: 'log', sev: 'warn', src: 'api',   t: 'rate-limit triggered ip=34.117.%RID% route=/v1/search count=140' },
+  { k: 'log', sev: 'info', src: 'redis', t: 'CACHE hit ratio=98.4% keys=1.2M evicted=0' },
+  { k: 'log', sev: 'info', src: 'kube',  t: 'pod/worker-%RID% scheduled node=ip-10-0-1-%RID% qos=Burstable' },
+  { k: 'log', sev: 'ok',   src: 'cert',  t: 'TLS renewed domain=control.center expires_in=89d issuer=R10' },
+  { k: 'log', sev: 'warn', src: 'sys',   t: 'memory.pressure rss=68% swap_used=124MB threshold=70%' },
+  { k: 'log', sev: 'info', src: 'edge',  t: 'cdn.purge zone=eu-west-2 keys=14 latency=42ms' },
+];
+
+const sevStyle = {
+  info: { c: 'var(--blue-2)', label: 'INFO' },
+  ok:   { c: 'var(--green-2)', label: 'OK  ' },
+  warn: { c: 'var(--amber)', label: 'WARN' },
+  err:  { c: 'var(--red)',   label: 'ERR ' },
+};
+
+/* =========================================================
+   SMALL UI ATOMS
+   ========================================================= */
+
+const StatusDot = ({ status }) => {
+  const c = statusMap[status]?.color || 'var(--text-3)';
+  return (
+    <span style={{position:'relative', display:'inline-flex', width:8, height:8}}>
+      <span style={{position:'absolute', inset:0, borderRadius:'50%', background:c, boxShadow:`0 0 8px ${c}`}} className={status==='online' ? 'pulse' : ''}></span>
+    </span>
+  );
+};
+
+const KBD = ({ children }) => (
+  <span className="mono" style={{
+    display:'inline-flex', alignItems:'center', justifyContent:'center',
+    minWidth: 18, height: 18, padding: '0 5px', fontSize: 11,
+    color: 'var(--text-2)',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--line)',
+    borderRadius: 5,
+    boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.4)',
+  }}>{children}</span>
+);
+
+const Sparkline = ({ data, color = 'var(--blue)', width = 110, height = 26, glow = true }) => {
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const stepX = width / (data.length - 1);
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return [x, y];
+  });
+  const pathD = points.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
+  const areaD = pathD + ` L ${width} ${height} L 0 ${height} Z`;
+  const id = useMemo(() => 'spk_' + Math.random().toString(36).slice(2, 8), []);
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.35"/>
+          <stop offset="1" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d={areaD} fill={`url(#${id})`} />
+      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={glow ? { filter: `drop-shadow(0 0 4px ${color})` } : {}} />
+    </svg>
+  );
+};
+
+/* =========================================================
+   LEFT SIDEBAR (icon rail + server list)
+   ========================================================= */
+function IconRail({ active = 'terminal', onNavigate, expanded, setExpanded }) {
+  const items = [
+    { id: 'devices', icon: 'dashboard', label: 'Dispositivos' },
+    { id: 'metrics', icon: 'chart', label: 'Métricas' },
+    { id: 'terminal', icon: 'terminal', label: 'Terminal' },
+    { id: 'alerts', icon: 'bell', label: 'Alertas' },
+    { id: 'settings', icon: 'gear', label: 'Ajustes' },
+  ];
+  const W = expanded ? 200 : 56;
+  return (
+    <div style={{
+      width: W, display: 'flex', flexDirection: 'column',
+      alignItems: 'stretch', padding: '14px 10px 12px',
+      gap: 4, background: 'rgba(7,10,20,0.6)',
+      borderRight: '1px solid var(--line)',
+      transition: 'width 220ms cubic-bezier(.4,.2,.2,1)',
+      overflow: 'hidden',
+      position: 'relative',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 2px', marginBottom: 8, height: 36 }}>
+        <div style={{ width: 36, height: 36, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="logo" size={32} />
+        </div>
+        {expanded && (
+          <div style={{ display: 'flex', flexDirection: 'column', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>Control Center</span>
+            <span style={{ fontSize: 10, color: 'var(--text-3)', letterSpacing: 0.4 }}>v2.4.1</span>
+          </div>
+        )}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+        {items.map(it => {
+          const on = it.id === active;
+          return (
+            <button key={it.id} title={!expanded ? it.label : undefined} onClick={() => onNavigate && onNavigate(it.id)} style={{
+              width: '100%', height: 36, borderRadius: 9,
+              background: on ? 'rgba(59,130,246,0.16)' : 'transparent',
+              border: on ? '1px solid rgba(59,130,246,0.5)' : '1px solid transparent',
+              color: on ? '#fff' : 'var(--text-3)',
+              boxShadow: on ? '0 0 18px rgba(59,130,246,0.35), inset 0 0 12px rgba(59,130,246,0.15)' : 'none',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: expanded ? '0 10px' : 0,
+              justifyContent: expanded ? 'flex-start' : 'center',
+              transition: 'all 160ms ease',
+              fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+              textAlign: 'left',
+            }} onMouseEnter={(e)=>{ if(!on) e.currentTarget.style.color='var(--text)'; }} onMouseLeave={(e)=>{ if(!on) e.currentTarget.style.color='var(--text-3)'; }}>
+              <Icon name={it.icon} size={18} />
+              {expanded && <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* collapse / expand toggle */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        title={expanded ? 'Contraer' : 'Expandir'}
+        style={{
+          width: '100%', height: 30, borderRadius: 8,
+          marginBottom: 8,
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid var(--line)',
+          color: 'var(--text-3)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center',
+          justifyContent: expanded ? 'space-between' : 'center',
+          gap: 8, padding: expanded ? '0 10px' : 0,
+          fontSize: 12, fontFamily: 'inherit',
+        }}
+        onMouseEnter={(e)=>{ e.currentTarget.style.color='var(--text)'; e.currentTarget.style.borderColor='var(--line-strong)'; }}
+        onMouseLeave={(e)=>{ e.currentTarget.style.color='var(--text-3)'; e.currentTarget.style.borderColor='var(--line)'; }}
+      >
+        {expanded && <span>Contraer</span>}
+        <Icon name="chevron-right" size={14} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 220ms' }} />
+      </button>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: expanded ? '8px 6px 0' : '8px 0 0',
+        borderTop: '1px solid var(--line)',
+        justifyContent: expanded ? 'flex-start' : 'center',
+      }}>
+        <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>AD</div>
+        {expanded && (
+          <div style={{ display: 'flex', flexDirection: 'column', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#fff', lineHeight: 1.15 }}>Administrador</span>
+            <span style={{ fontSize: 10, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}>admin@controlcenter.io</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ServerList({ servers, activeId, onSelect, query, setQuery }) {
+  const filtered = servers.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || s.host.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div style={{
+      width: 260, display: 'flex', flexDirection: 'column',
+      background: 'rgba(10,14,26,0.65)',
+      borderRight: '1px solid var(--line)',
+    }}>
+      <div style={{ padding: '14px 14px 8px' }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600, marginBottom: 8 }}>SESIÓN ACTIVA</div>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', display:'inline-flex' }}><Icon name="search" size={14}/></span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar sesiones…"
+            className="ring-blue"
+            style={{
+              width: '100%', padding: '8px 10px 8px 32px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--line)',
+              borderRadius: 8, color: 'var(--text)',
+              fontSize: 13, outline: 'none',
+              fontFamily: 'inherit',
+            }}/>
+          <span className="mono" style={{ position:'absolute', right: 8, top:'50%', transform:'translateY(-50%)', color: 'var(--text-4)', fontSize: 11 }}>⌘K</span>
+        </div>
+      </div>
+
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: '8px 14px 6px' }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600 }}>SERVIDORES · {filtered.length}</div>
+        <button title="Nueva conexión" style={{
+          width: 22, height: 22, borderRadius: 6,
+          border: '1px solid var(--line)', background: 'rgba(255,255,255,0.02)',
+          color: 'var(--text-2)', cursor: 'pointer', display: 'grid', placeItems: 'center'
+        }}><Icon name="plus" size={12}/></button>
+      </div>
+
+      <div className="scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 8px 10px' }}>
+        {filtered.map(s => {
+          const on = s.id === activeId;
+          const st = statusMap[s.status];
+          return (
+            <button
+              key={s.id}
+              onClick={() => onSelect(s.id)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 10px',
+                background: on ? 'linear-gradient(180deg, rgba(59,130,246,0.16), rgba(59,130,246,0.06))' : 'transparent',
+                border: on ? '1px solid rgba(59,130,246,0.55)' : '1px solid transparent',
+                borderRadius: 10, marginBottom: 4, cursor: 'pointer',
+                color: 'var(--text)', textAlign: 'left',
+                boxShadow: on ? '0 0 22px rgba(59,130,246,0.22), inset 0 0 12px rgba(59,130,246,0.10)' : 'none',
+                transition: 'background 160ms, border-color 160ms',
+              }}
+              onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+              onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <div style={{
+                width: 30, height: 30, borderRadius: 8,
+                background: on ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.04)',
+                color: on ? 'var(--blue-2)' : 'var(--text-2)',
+                display: 'grid', placeItems: 'center', flexShrink: 0,
+                border: '1px solid var(--line)',
+              }}>
+                <Icon name={s.icon} size={15}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{s.name}</div>
+                <div style={{ display:'flex', alignItems:'center', gap: 6, fontSize: 11, color: st.color }}>
+                  <StatusDot status={s.status}/> <span style={{ color: st.color }}>{st.label}</span>
+                  <span style={{ color: 'var(--text-4)' }}>· {s.latency || 0}ms</span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+
+        <div style={{ height: 1, background: 'var(--line)', margin: '10px 6px' }}/>
+        <div style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600, padding: '4px 8px 8px' }}>FAVORITOS</div>
+        {[
+          { n: 'staging-eu', i: 'cube' },
+          { n: 'kube-runner', i: 'cube' },
+        ].map(f => (
+          <div key={f.n} style={{ display:'flex', alignItems:'center', gap: 10, padding: '8px 10px', borderRadius: 8, color:'var(--text-2)', fontSize: 13, cursor: 'pointer' }}
+            onMouseEnter={(e)=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+            onMouseLeave={(e)=>e.currentTarget.style.background='transparent'}
+          >
+            <Icon name="star" size={13}/><span style={{ color: 'var(--text-2)' }}>{f.n}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   TOP STATUS / METRICS BAR
+   ========================================================= */
+function TopBar({ server, tabs, activeTab, setActiveTab, addTab, closeTab, metrics, rightOpen, setRightOpen }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      borderBottom: '1px solid var(--line)',
+      background: 'rgba(10,14,26,0.6)',
+      backdropFilter: 'blur(14px)',
+    }}>
+      {/* Window/title row */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: '10px 14px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 14 }}>
+          <span style={{ display:'inline-flex', alignItems:'center', gap: 8, color:'var(--text-3)', fontSize: 13 }}>
+            <Icon name="chevron-right" size={14} style={{ transform: 'rotate(180deg)' }}/> <span>Dispositivos</span>
+          </span>
+          <span style={{ color:'var(--text-4)' }}>/</span>
+          <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+            <Icon name="terminal" size={14} className="" style={{ color: 'var(--blue-2)'}}/>
+            <span style={{ fontSize: 13, fontWeight: 600, color:'#fff' }}>Terminal</span>
+            <span style={{ color:'var(--text-4)' }}>·</span>
+            <span className="mono" style={{ fontSize: 12, color:'var(--text-2)' }}>{server.host}</span>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+          <MiniMetric label="CPU"  v={metrics.cpu}  c="var(--blue)"   data={metrics.spark.cpu}/>
+          <MiniMetric label="RAM"  v={metrics.ram}  c="var(--green)"  data={metrics.spark.ram}/>
+          <MiniMetric label="RED"  v={metrics.net}  c="var(--violet)" data={metrics.spark.net} unit=" MB/s" decimals={1}/>
+          <MiniMetric label="LAT"  v={metrics.lat}  c="var(--cyan)"   data={metrics.spark.lat} unit=" ms"/>
+          <div style={{ width: 1, height: 26, background: 'var(--line)', margin: '0 6px' }}/>
+          <ConnPill latency={metrics.lat}/>
+          <button onClick={() => setRightOpen(v => !v)} title={rightOpen ? 'Ocultar panel' : 'Mostrar panel'} style={{
+            display:'inline-flex', alignItems:'center', gap: 6,
+            padding: '6px 10px', borderRadius: 8,
+            border: '1px solid var(--line)',
+            background: rightOpen ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.02)',
+            color: rightOpen ? 'var(--violet-2)' : 'var(--text-2)',
+            fontSize: 12, cursor: 'pointer'
+          }}>
+            <Icon name="sidebar" size={14}/> Panel
+          </button>
+          <button title="Más" style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: 'rgba(255,255,255,0.02)', border: '1px solid var(--line)',
+            color: 'var(--text-2)', cursor: 'pointer', display:'grid', placeItems: 'center'
+          }}><Icon name="more" size={16}/></button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', padding: '10px 14px 0', gap: 6, overflowX: 'auto' }}>
+        {tabs.map(t => {
+          const on = t.id === activeTab;
+          return (
+            <div key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                display:'inline-flex', alignItems:'center', gap: 8,
+                padding: '8px 10px 8px 12px', minWidth: 180, maxWidth: 240,
+                borderTopLeftRadius: 10, borderTopRightRadius: 10,
+                background: on ? 'var(--bg-2)' : 'transparent',
+                border: '1px solid var(--line)',
+                borderBottomColor: on ? 'var(--bg-2)' : 'var(--line)',
+                marginBottom: -1,
+                cursor: 'pointer',
+                position: 'relative',
+              }}>
+              {on && <div style={{ position:'absolute', left: 10, right: 10, top: 0, height: 2, background: 'linear-gradient(90deg, var(--blue), var(--violet))', borderRadius: 2, boxShadow: '0 0 10px rgba(59,130,246,0.6)' }}/>}
+              <StatusDot status={t.status}/>
+              <span style={{ fontSize: 12, color: on ? '#fff' : 'var(--text-2)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', flex: 1 }}>{t.label}</span>
+              <button onClick={(e) => { e.stopPropagation(); closeTab(t.id); }} style={{
+                width: 18, height: 18, borderRadius: 4,
+                background: 'transparent', border: 0,
+                color: 'var(--text-4)', cursor: 'pointer', display: 'grid', placeItems: 'center'
+              }}
+                onMouseEnter={(e)=>{e.currentTarget.style.color='var(--text)'; e.currentTarget.style.background='rgba(255,255,255,0.06)'}}
+                onMouseLeave={(e)=>{e.currentTarget.style.color='var(--text-4)'; e.currentTarget.style.background='transparent'}}
+              ><Icon name="close" size={11}/></button>
+            </div>
+          );
+        })}
+        <button onClick={addTab} title="Nueva sesión" style={{
+          width: 30, height: 30, borderRadius: 8, marginLeft: 4, marginBottom: 4,
+          background: 'rgba(255,255,255,0.02)', border: '1px solid var(--line)',
+          color: 'var(--text-2)', cursor: 'pointer', display: 'grid', placeItems: 'center'
+        }}><Icon name="plus" size={14}/></button>
+      </div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, v, c, data, unit = '%', decimals = 0 }) {
+  return (
+    <div style={{
+      display:'inline-flex', alignItems:'center', gap: 10,
+      padding: '6px 10px', borderRadius: 8,
+      background: 'rgba(255,255,255,0.025)',
+      border: '1px solid var(--line)',
+    }}>
+      <div style={{ display:'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 9, color: 'var(--text-3)', letterSpacing: 1.2, fontWeight: 600 }}>{label}</span>
+        <span className="mono" style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>{v.toFixed(decimals)}{unit}</span>
+      </div>
+      <Sparkline data={data} color={c} width={64} height={20}/>
+    </div>
+  );
+}
+
+function ConnPill({ latency }) {
+  return (
+    <div style={{
+      display:'inline-flex', alignItems:'center', gap: 8, padding: '6px 10px',
+      borderRadius: 999,
+      background: 'rgba(34,197,94,0.08)',
+      border: '1px solid rgba(34,197,94,0.3)',
+      color: 'var(--green-2)', fontSize: 12, fontWeight: 600,
+    }}>
+      <StatusDot status="online"/> Conectado
+      <span className="mono" style={{ color: 'var(--text-3)', fontWeight: 500 }}>·</span>
+      <span className="mono" style={{ color: 'var(--text-2)', fontWeight: 500 }}>{Math.round(latency)}ms</span>
+    </div>
+  );
+}
+
+/* =========================================================
+   TERMINAL CORE
+   ========================================================= */
+
+function syntaxizeCmd(cmd) {
+  // very lightweight: first token green-ish, flags amber, strings violet
+  const parts = [];
+  let i = 0;
+  const tokens = cmd.match(/("[^"]*"|'[^']*'|--?[\w-]+|[^\s]+)/g) || [];
+  tokens.forEach((tok, idx) => {
+    let c = 'var(--text)';
+    if (idx === 0) c = 'var(--green-2)';
+    else if (tok.startsWith('-')) c = 'var(--amber)';
+    else if (/^["']/.test(tok)) c = 'var(--violet-2)';
+    else if (/^\d/.test(tok)) c = 'var(--cyan)';
+    parts.push(<span key={idx} style={{ color: c }}>{tok}</span>);
+    if (idx < tokens.length - 1) parts.push(<span key={'s'+idx}> </span>);
+  });
+  return parts;
+}
+
+function LogLine({ line, animate }) {
+  const cls = animate ? 'line-in' : '';
+  if (line.k === 'sys') {
+    return <div className={'mono ' + cls} style={{ color: 'var(--text-3)', padding: '1px 0' }}>{line.t}</div>;
+  }
+  if (line.k === 'out') {
+    let color = 'var(--text)';
+    if (line.cls === 'g') color = 'var(--green-2)';
+    if (line.cls === 'dim') color = 'var(--text-3)';
+    if (line.cls === 'v') color = 'var(--violet-2)';
+    return <div className={'mono ' + cls} style={{ color, padding: '1px 0', whiteSpace: 'pre-wrap' }}>{line.t}</div>;
+  }
+  if (line.k === 'prompt') {
+    return (
+      <div className={'mono ' + cls} style={{ display:'flex', flexWrap:'wrap', alignItems:'baseline', padding: '4px 0', gap: 0 }}>
+        <span style={{ color: 'var(--green-2)' }}>{line.host}</span>
+        <span style={{ color: 'var(--text-3)' }}>:</span>
+        <span style={{ color: 'var(--blue-2)' }}>{line.path}</span>
+        <span style={{ color: 'var(--text-3)', marginRight: 8 }}>$</span>
+        <span style={{ color: 'var(--text)' }}>{syntaxizeCmd(line.cmd)}</span>
+      </div>
+    );
+  }
+  if (line.k === 'log') {
+    const s = sevStyle[line.sev] || sevStyle.info;
+    return (
+      <div className={'mono ' + cls} style={{ display:'flex', alignItems:'flex-start', gap: 10, padding: '2px 0', fontSize: 12.5 }}>
+        <span style={{ color: 'var(--text-4)', minWidth: 64 }}>{line.time}</span>
+        <span style={{ color: s.c, fontWeight: 700, minWidth: 38 }}>{s.label}</span>
+        <span style={{ color: 'var(--violet-2)', minWidth: 56 }}>{line.src}</span>
+        <span style={{ color: 'var(--text)', whiteSpace:'pre-wrap' }}>{line.t}</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+const HELP_LINES = [
+  { k: 'out', cls: 'g', t: 'Comandos disponibles:' },
+  { k: 'out', t: '  help                 muestra esta ayuda' },
+  { k: 'out', t: '  clear                limpia la terminal' },
+  { k: 'out', t: '  status               estado del servidor activo' },
+  { k: 'out', t: '  ps                   procesos en ejecución' },
+  { k: 'out', t: '  ls [path]            lista archivos' },
+  { k: 'out', t: '  uptime               tiempo activo del sistema' },
+  { k: 'out', t: '  docker ps            contenedores en ejecución' },
+  { k: 'out', t: '  tail -f <file>       streaming de logs (Ctrl+C para detener)' },
+];
+
+function Terminal({ server, paused, setPaused, follow, setFollow, splitView }) {
+  const [lines, setLines] = useState(INITIAL_LINES);
+  const [input, setInput] = useState('');
+  const [history, setHistory] = useState([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const [hovered, setHovered] = useState(false);
+  const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // streaming logs
+  useEffect(() => {
+    if (paused) return;
+    let i = 0;
+    const id = setInterval(() => {
+      const tpl = STREAM_TEMPLATES[Math.floor(Math.random() * STREAM_TEMPLATES.length)];
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      const text = tpl.t
+        .replace('%MIN%', String(now.getMinutes()).padStart(2,'0'))
+        .replace('%SEC%', String(now.getSeconds()).padStart(2,'0'))
+        .replace(/%RID%/g, () => Math.random().toString(36).slice(2, 7));
+      setLines(prev => {
+        const next = [...prev, { ...tpl, t: text, time, _id: Date.now() + i }];
+        if (next.length > 400) next.splice(0, next.length - 400);
+        return next;
+      });
+      i++;
+    }, 1100);
+    return () => clearInterval(id);
+  }, [paused]);
+
+  // auto-scroll
+  useEffect(() => {
+    if (!follow) return;
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines, follow]);
+
+  // detect manual scroll up to pause follow
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    if (!atBottom && follow) setFollow(false);
+  };
+
+  const runCommand = (raw) => {
+    const cmd = raw.trim();
+    if (!cmd) {
+      setLines(prev => [...prev, { k: 'prompt', host: server.host, path: '~', cmd: '' }]);
+      return;
+    }
+    setHistory(h => [...h, cmd]);
+    setHistIdx(-1);
+    const promptLine = { k: 'prompt', host: server.host, path: '~', cmd };
+    const out = [];
+    const first = cmd.split(/\s+/)[0];
+    if (first === 'clear') {
+      setLines([]);
+      return;
+    }
+    if (first === 'help') out.push(...HELP_LINES);
+    else if (first === 'status') {
+      out.push({ k: 'out', cls: 'g', t: `● ${server.name} — ${statusMap[server.status].label}` });
+      out.push({ k: 'out', t: `  Host: ${server.host}   IP: ${server.ip}   OS: ${server.os}` });
+      out.push({ k: 'out', t: `  Región: ${server.region}   Latencia: ${server.latency}ms   Uptime: ${server.uptime}` });
+    } else if (first === 'ps') {
+      out.push({ k: 'out', cls: 'dim', t: 'PID   USER       %CPU  %MEM  COMMAND' });
+      out.push({ k: 'out', t: '1432  root        2.1   0.8   nginx: master' });
+      out.push({ k: 'out', t: '1433  www-data    1.8   0.6   nginx: worker' });
+      out.push({ k: 'out', t: '2104  postgres    5.4   3.1   postgres -D /var/lib/pg' });
+      out.push({ k: 'out', t: '4421  app         8.2   4.6   node /srv/api/dist/index.js' });
+      out.push({ k: 'out', t: '5012  redis       0.3   0.4   redis-server *:6379' });
+    } else if (first === 'ls') {
+      out.push({ k: 'out', cls: 'v', t: 'apps/   data/   logs/   secrets/   .env   docker-compose.yml' });
+    } else if (first === 'uptime') {
+      out.push({ k: 'out', t: ` 11:42:08 up ${server.uptime},  3 users,  load average: 0.89, 0.74, 0.61` });
+    } else if (first === 'docker') {
+      out.push({ k: 'out', cls: 'dim', t: 'NAMES                STATUS              PORTS' });
+      out.push({ k: 'out', t: 'api-gateway          Up 2 hours          0.0.0.0:8080->8080/tcp' });
+      out.push({ k: 'out', t: 'postgres-primary     Up 2 hours          0.0.0.0:5432->5432/tcp' });
+      out.push({ k: 'out', t: 'redis-cache          Up 2 hours          6379/tcp' });
+    } else if (first === 'tail') {
+      out.push({ k: 'out', cls: 'dim', t: '── streaming activo · usa el botón ⏸ para pausar ──' });
+    } else if (first === 'exit') {
+      out.push({ k: 'sys', t: '── sesión cerrada (simulación) ──' });
+    } else {
+      out.push({ k: 'out', cls: 'dim', t: `command not found: ${first}` });
+    }
+
+    setLines(prev => [...prev, promptLine, ...out]);
+    setFollow(true);
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter') {
+      runCommand(input);
+      setInput('');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const ni = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
+      setHistIdx(ni);
+      setInput(history[ni]);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (histIdx === -1) return;
+      const ni = histIdx + 1;
+      if (ni >= history.length) { setHistIdx(-1); setInput(''); }
+      else { setHistIdx(ni); setInput(history[ni]); }
+    } else if (e.key === 'l' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault(); setLines([]);
+    }
+  };
+
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      background: 'rgba(7,10,20,0.85)',
+      position: 'relative',
+      minHeight: 0,
+    }}
+    onMouseEnter={() => setHovered(true)}
+    onMouseLeave={() => setHovered(false)}
+    >
+      {/* toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 14px', borderBottom: '1px solid var(--line)',
+        background: 'rgba(15,20,36,0.6)',
+        fontSize: 12,
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
+          <span className="mono" style={{ color: 'var(--text-3)' }}>~/projects/control-center</span>
+          <span style={{ color: 'var(--text-4)' }}>·</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap: 6, color: 'var(--text-2)' }}>
+            <Icon name="branch" size={12} style={{color:'var(--violet-2)'}}/> main
+            <span style={{ color: 'var(--green-2)', marginLeft: 4 }}>● clean</span>
+          </span>
+          <span style={{ color: 'var(--text-4)' }}>·</span>
+          <span className="mono" style={{ color: 'var(--text-3)' }}>{lines.filter(l=>l.k==='log').length} eventos</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+          <ToolBtn icon={paused ? 'play' : 'pause'} label={paused ? 'Reanudar' : 'Pausar'} onClick={() => setPaused(p => !p)} active={paused}/>
+          <ToolBtn icon="download" label="Descargar" onClick={() => {}}/>
+          <ToolBtn icon="copy" label="Copiar" onClick={() => navigator.clipboard?.writeText(lines.map(l => l.cmd || l.t || '').join('\n'))}/>
+          <ToolBtn icon="trash" label="Limpiar" onClick={() => setLines([])}/>
+          <ToolBtn icon="split" label="Dividir" onClick={() => splitView && splitView()}/>
+          <ToolBtn icon="expand" label="Pantalla completa" onClick={() => {}}/>
+        </div>
+      </div>
+
+      {/* log area */}
+      <div ref={scrollRef} onScroll={onScroll} className="scroll" style={{
+        flex: 1, overflowY: 'auto',
+        padding: '16px 18px 90px',
+        fontSize: 12.5, lineHeight: 1.55,
+      }}>
+        {lines.map((l, i) => <LogLine key={l._id || i} line={l} animate={l._id && i > lines.length - 4}/>)}
+        <div className="mono" style={{ display:'flex', alignItems:'baseline' }}>
+          <span style={{ color:'var(--green-2)' }}>{server.host}</span>
+          <span style={{ color:'var(--text-3)' }}>:</span>
+          <span style={{ color:'var(--blue-2)' }}>~</span>
+          <span style={{ color:'var(--text-3)', marginRight: 8 }}>$</span>
+          <span className="caret"/>
+        </div>
+      </div>
+
+      {/* Floating "jump to live" pill */}
+      {!follow && (
+        <button onClick={() => { setFollow(true); if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }} style={{
+          position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)',
+          padding: '6px 12px', borderRadius: 999,
+          background: 'rgba(59,130,246,0.18)', border: '1px solid rgba(59,130,246,0.45)',
+          color: 'var(--blue-2)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 6px 20px rgba(59,130,246,0.3)'
+        }}>↓ Saltar a tiempo real</button>
+      )}
+
+      {/* command input */}
+      <div style={{
+        position: 'absolute', left: 18, right: 18, bottom: 18,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 12px',
+        background: 'linear-gradient(180deg, rgba(20,27,49,0.85), rgba(13,18,34,0.85))',
+        border: '1px solid rgba(59,130,246,0.30)',
+        borderRadius: 12,
+        backdropFilter: 'blur(12px)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.45), 0 0 24px rgba(59,130,246,0.10), inset 0 0 16px rgba(59,130,246,0.06)',
+      }}>
+        <span className="mono" style={{ display:'inline-flex', alignItems:'baseline', gap: 0, color:'var(--text-2)', fontSize: 13 }}>
+          <span style={{ color:'var(--green-2)' }}>{server.host}</span>
+          <span style={{ color:'var(--text-3)' }}>:</span>
+          <span style={{ color:'var(--blue-2)' }}>~</span>
+          <span style={{ color:'var(--text-3)', marginRight: 4 }}>$</span>
+        </span>
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="Escribe un comando… (prueba: help, status, ps, ls, docker ps)"
+          className="mono"
+          spellCheck="false"
+          autoFocus
+          style={{
+            flex: 1, background: 'transparent', border: 0, outline: 'none',
+            color: '#fff', fontSize: 13.5, letterSpacing: 0,
+          }}
+        />
+        <div style={{ display:'flex', alignItems:'center', gap: 6, color: 'var(--text-4)', fontSize: 11 }}>
+          <KBD>↑</KBD><KBD>↓</KBD> <span>historial</span>
+          <span style={{ width: 1, height: 14, background: 'var(--line)', margin: '0 6px' }}/>
+          <KBD>⌘</KBD><KBD>K</KBD>
+        </div>
+        <button onClick={() => { runCommand(input); setInput(''); }} style={{
+          display:'inline-flex', alignItems:'center', gap: 6,
+          padding: '7px 12px', borderRadius: 8,
+          background: 'linear-gradient(180deg, #3b82f6, #2f6ed1)',
+          color: '#fff', border: 0, fontWeight: 600, fontSize: 12.5, cursor: 'pointer',
+          boxShadow: '0 6px 18px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.18)'
+        }}>
+          <Icon name="kbd-enter" size={13}/> Ejecutar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ToolBtn({ icon, label, onClick, active }) {
+  return (
+    <button title={label} onClick={onClick} style={{
+      display:'inline-flex', alignItems:'center', gap: 6,
+      padding: '6px 9px', borderRadius: 7,
+      background: active ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.02)',
+      border: '1px solid var(--line)',
+      color: active ? 'var(--violet-2)' : 'var(--text-2)',
+      cursor: 'pointer', fontSize: 12,
+    }}
+      onMouseEnter={(e)=>{ if (!active) e.currentTarget.style.color = 'var(--text)'; }}
+      onMouseLeave={(e)=>{ if (!active) e.currentTarget.style.color = 'var(--text-2)'; }}
+    >
+      <Icon name={icon} size={13}/>
+    </button>
+  );
+}
+
+/* =========================================================
+   RIGHT INFO PANEL
+   ========================================================= */
+function RightPanel({ server, metrics }) {
+  return (
+    <div style={{
+      width: 300, display: 'flex', flexDirection: 'column',
+      borderLeft: '1px solid var(--line)',
+      background: 'rgba(10,14,26,0.6)',
+      backdropFilter: 'blur(14px)',
+    }}>
+      {/* server header */}
+      <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.35)', display:'grid', placeItems:'center', color: 'var(--blue-2)' }}>
+            <Icon name={server.icon} size={18}/>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color:'#fff' }}>{server.name}</div>
+            <div style={{ fontSize: 11, display:'inline-flex', alignItems:'center', gap: 6, color: statusMap[server.status].color }}>
+              <StatusDot status={server.status}/> {statusMap[server.status].label}
+            </div>
+          </div>
+          <button style={{ width: 28, height: 28, borderRadius: 7, background: 'transparent', border: '1px solid var(--line)', color: 'var(--text-3)', cursor: 'pointer', display:'grid', placeItems:'center' }}>
+            <Icon name="more" size={14}/>
+          </button>
+        </div>
+
+        <div style={{ marginTop: 12, display:'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 6, fontSize: 12 }}>
+          <span style={{ color:'var(--text-3)' }}>Host</span><span className="mono" style={{ color:'#fff' }}>{server.host}</span>
+          <span style={{ color:'var(--text-3)' }}>IP</span><span className="mono" style={{ color:'#fff' }}>{server.ip}</span>
+          <span style={{ color:'var(--text-3)' }}>OS</span><span style={{ color:'#fff' }}>{server.os}</span>
+          <span style={{ color:'var(--text-3)' }}>Región</span><span className="mono" style={{ color:'#fff' }}>{server.region}</span>
+          <span style={{ color:'var(--text-3)' }}>Uptime</span><span className="mono" style={{ color:'#fff' }}>{server.uptime}</span>
+        </div>
+      </div>
+
+      {/* live metrics */}
+      <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600 }}>MÉTRICAS EN VIVO</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap: 5, fontSize: 11, color:'var(--green-2)' }}>
+            <StatusDot status="online"/> 1s
+          </span>
+        </div>
+        <MetricRow label="CPU"    v={metrics.cpu} unit="%" c="var(--blue)"  data={metrics.spark.cpu}/>
+        <MetricRow label="RAM"    v={metrics.ram} unit="%" c="var(--green)" data={metrics.spark.ram}/>
+        <MetricRow label="DISCO"  v={metrics.disk} unit="%" c="var(--violet)" data={metrics.spark.disk}/>
+        <MetricRow label="RED"    v={metrics.net} unit=" MB/s" decimals={1} c="var(--pink)" data={metrics.spark.net}/>
+      </div>
+
+      {/* connections */}
+      <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600, marginBottom: 10 }}>CONEXIÓN SSH</div>
+        <div style={{ display:'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 8, fontSize: 12 }}>
+          <span style={{ color:'var(--text-3)' }}>Cifrado</span><span className="mono" style={{ color:'#fff' }}>ED25519 · AES-256-GCM</span>
+          <span style={{ color:'var(--text-3)' }}>Sesión</span><span className="mono" style={{ color:'#fff' }}>00:12:48</span>
+          <span style={{ color:'var(--text-3)' }}>Latencia</span><span className="mono" style={{ color:'var(--green-2)' }}>{Math.round(metrics.lat)} ms</span>
+          <span style={{ color:'var(--text-3)' }}>Bandwidth</span><span className="mono" style={{ color:'#fff' }}>↓ 218 Mbps · ↑ 42 Mbps</span>
+          <span style={{ color:'var(--text-3)' }}>Auth</span><span style={{ color:'var(--green-2)', display:'inline-flex', alignItems:'center', gap: 6 }}><Icon name="lock" size={12}/> Clave + 2FA</span>
+        </div>
+      </div>
+
+      {/* quick actions */}
+      <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600, marginBottom: 10 }}>ACCIONES RÁPIDAS</div>
+        <div style={{ display:'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { i: 'refresh', l: 'Reiniciar' },
+            { i: 'pause',   l: 'Detener' },
+            { i: 'shield',  l: 'Logs auth' },
+            { i: 'folder',  l: 'Archivos' },
+          ].map((a) => (
+            <button key={a.l} style={{
+              display:'inline-flex', alignItems:'center', gap: 8,
+              padding: '8px 10px', borderRadius: 8,
+              background: 'rgba(255,255,255,0.025)',
+              border: '1px solid var(--line)',
+              color: 'var(--text-2)', cursor: 'pointer', fontSize: 12,
+            }}
+              onMouseEnter={(e)=>{ e.currentTarget.style.color='#fff'; e.currentTarget.style.borderColor='var(--line-strong)'; }}
+              onMouseLeave={(e)=>{ e.currentTarget.style.color='var(--text-2)'; e.currentTarget.style.borderColor='var(--line)'; }}
+            ><Icon name={a.i} size={13}/> {a.l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* history */}
+      <div style={{ flex: 1, padding: 16, display:'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 10, letterSpacing: 1.3, color: 'var(--text-3)', fontWeight: 600 }}>HISTORIAL</span>
+          <Icon name="history" size={12} className="" style={{color:'var(--text-3)'}}/>
+        </div>
+        <div className="scroll" style={{ flex: 1, overflowY:'auto', display:'flex', flexDirection: 'column', gap: 4 }}>
+          {[
+            'systemctl restart nginx',
+            'docker logs api-gateway --tail 100',
+            'kubectl get pods -n prod',
+            'psql -c "vacuum analyze"',
+            'tail -f /var/log/syslog',
+            'ufw status verbose',
+            'htop',
+          ].map((c, i) => (
+            <button key={i} className="mono" style={{
+              textAlign: 'left', fontSize: 12, color: 'var(--text-2)',
+              padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+              border: 0, background:'transparent',
+            }}
+              onMouseEnter={(e)=>{ e.currentTarget.style.background='rgba(255,255,255,0.04)'; e.currentTarget.style.color='#fff'; }}
+              onMouseLeave={(e)=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--text-2)'; }}
+            >$ {c}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricRow({ label, v, unit = '%', c, data, decimals = 0 }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: 1.1, fontWeight: 600 }}>{label}</span>
+        <span className="mono" style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>{v.toFixed(decimals)}{unit}</span>
+      </div>
+      <Sparkline data={data} color={c} width={268} height={26}/>
+    </div>
+  );
+}
+
+/* =========================================================
+   DEVICES VIEW (matches dashboard screenshot)
+   ========================================================= */
+function DevicesHeader({ server }) {
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      padding: '18px 24px',
+      borderBottom: '1px solid var(--line)',
+      background: 'rgba(10,14,26,0.5)',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap: 16 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 12,
+          background: 'linear-gradient(180deg, rgba(59,130,246,0.18), rgba(139,92,246,0.10))',
+          border: '1px solid var(--line-strong)',
+          display:'grid', placeItems:'center', color: 'var(--blue-2)',
+          boxShadow: 'inset 0 0 18px rgba(59,130,246,0.10)',
+        }}>
+          <Icon name={server.icon} size={26}/>
+        </div>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
+            <span style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: -0.3 }}>{server.name}</span>
+            <span style={{
+              display:'inline-flex', alignItems:'center', gap: 6,
+              padding: '3px 10px', borderRadius: 999,
+              background: 'rgba(34,197,94,0.10)',
+              border: '1px solid rgba(34,197,94,0.3)',
+              color: 'var(--green-2)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+            }}><StatusDot status="online"/> En línea</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap: 14, fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>
+            <span>{server.os}</span>
+            <span style={{ color: 'var(--text-4)' }}>·</span>
+            <span className="mono">{server.ip}</span>
+            <span style={{ color: 'var(--text-4)' }}>·</span>
+            <span>Tiempo activo: <span style={{ color: 'var(--text)' }}>{server.uptime}</span></span>
+          </div>
+        </div>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+        <ActionBtn icon="refresh">Reiniciar</ActionBtn>
+        <ActionBtn icon="pause" tone="danger">Detener</ActionBtn>
+        <PrimarySplitBtn>Más acciones</PrimarySplitBtn>
+      </div>
+    </div>
+  );
+}
+
+function ActionBtn({ icon, children, tone }) {
+  const danger = tone === 'danger';
+  return (
+    <button style={{
+      display:'inline-flex', alignItems:'center', gap: 8,
+      padding: '8px 14px', borderRadius: 10,
+      background: 'rgba(255,255,255,0.025)',
+      border: `1px solid ${danger ? 'rgba(239,68,68,0.35)' : 'var(--line)'}`,
+      color: danger ? '#fca5a5' : 'var(--text)',
+      fontSize: 13, fontWeight: 500, cursor: 'pointer',
+      fontFamily: 'inherit',
+    }}
+      onMouseEnter={(e)=>{ e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.10)' : 'rgba(255,255,255,0.05)'; }}
+      onMouseLeave={(e)=>{ e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
+    >
+      <Icon name={icon} size={14}/> {children}
+    </button>
+  );
+}
+
+function PrimarySplitBtn({ children }) {
+  return (
+    <div style={{ display:'inline-flex' }}>
+      <button style={{
+        display:'inline-flex', alignItems:'center', gap: 8,
+        padding: '8px 16px',
+        borderTopLeftRadius: 10, borderBottomLeftRadius: 10,
+        background: 'linear-gradient(180deg, #3b82f6, #2f6ed1)',
+        color: '#fff', border: 0, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        boxShadow: '0 6px 18px rgba(59,130,246,0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
+        fontFamily: 'inherit',
+      }}>{children}</button>
+      <button style={{
+        display:'inline-flex', alignItems:'center',
+        padding: '8px 10px',
+        borderTopRightRadius: 10, borderBottomRightRadius: 10,
+        background: 'linear-gradient(180deg, #3070d8, #2960be)',
+        color: '#fff', border: 0, borderLeft: '1px solid rgba(0,0,0,0.18)', cursor: 'pointer',
+        boxShadow: '0 6px 18px rgba(59,130,246,0.30), inset 0 1px 0 rgba(255,255,255,0.12)',
+      }}><Icon name="chevron-down" size={14}/></button>
+    </div>
+  );
+}
+
+function DevicesTabs({ active, setActive, range, setRange }) {
+  const tabs = ['Resumen', 'Métricas', 'Procesos', 'Servicios', 'Registros', 'Alertas', 'Configuración'];
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      padding: '0 24px',
+      borderBottom: '1px solid var(--line)',
+      background: 'rgba(10,14,26,0.35)',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap: 4 }}>
+        {tabs.map(t => {
+          const on = t === active;
+          return (
+            <button key={t} onClick={() => setActive(t)} style={{
+              padding: '14px 14px 12px', position: 'relative',
+              background: 'transparent', border: 0,
+              color: on ? '#fff' : 'var(--text-3)',
+              fontSize: 13, fontWeight: on ? 600 : 500, cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+              onMouseEnter={(e)=>{ if (!on) e.currentTarget.style.color='var(--text)'; }}
+              onMouseLeave={(e)=>{ if (!on) e.currentTarget.style.color='var(--text-3)'; }}
+            >
+              {t}
+              {on && <div style={{
+                position:'absolute', left: 12, right: 12, bottom: 0, height: 2,
+                background: 'linear-gradient(90deg, var(--blue), var(--violet))',
+                borderRadius: 2,
+                boxShadow: '0 0 10px rgba(59,130,246,0.55)',
+              }}/>}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
+        <button style={{
+          display:'inline-flex', alignItems:'center', gap: 10,
+          padding: '7px 12px', borderRadius: 9,
+          background: 'rgba(255,255,255,0.025)',
+          border: '1px solid var(--line)',
+          color: 'var(--text)', fontSize: 12.5, cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}>
+          {range} <Icon name="chevron-down" size={13} style={{color:'var(--text-3)'}}/>
+        </button>
+        <span style={{ display:'inline-flex', alignItems:'center', gap: 6, fontSize: 12, color: 'var(--green-2)' }}>
+          <StatusDot status="online"/> Actualizando…
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* Larger metric chart */
+function LineChartLarge({ data, color, height = 170 }) {
+  const id = useMemo(() => 'lcl_' + Math.random().toString(36).slice(2, 8), []);
+  const width = 100; // viewBox units, will stretch
+  const max = Math.max(...data, 100);
+  const min = 0;
+  const padY = 8;
+  const innerH = height - padY * 2;
+  const stepX = width / (data.length - 1);
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = padY + (1 - (v - min) / (max - min)) * innerH;
+    return [x, y];
+  });
+  const path = points.map((p,i) => (i===0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
+  const area = path + ` L ${width} ${height} L 0 ${height} Z`;
+  const last = points[points.length - 1];
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.40"/>
+          <stop offset="1" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      {/* gridlines */}
+      {[0, 0.5, 1].map((p, i) => (
+        <line key={i} x1="0" x2={width} y1={padY + p*innerH} y2={padY + p*innerH} stroke="rgba(255,255,255,0.05)" strokeWidth="0.3"/>
+      ))}
+      <path d={area} fill={`url(#${id})`} />
+      <path d={path} fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={{ filter: `drop-shadow(0 0 4px ${color})` }}/>
+      {/* end dot */}
+      <circle cx={last[0]} cy={last[1]} r="2.4" fill={color} style={{ filter: `drop-shadow(0 0 6px ${color})` }} vectorEffect="non-scaling-stroke"/>
+      <circle cx={last[0]} cy={last[1]} r="1" fill="#fff" vectorEffect="non-scaling-stroke"/>
+    </svg>
+  );
+}
+
+function MetricCardBig({ icon, title, value, sub, badge, color, data, accentBg, unit = '%' }) {
+  const times = ['14:21','14:22','14:23','14:24','14:25','Ahora'];
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      padding: 18,
+      background: 'rgba(15,20,36,0.6)',
+      border: '1px solid var(--line)',
+      borderRadius: 14,
+      position: 'relative', overflow: 'hidden',
+      boxShadow: `inset 0 0 30px ${accentBg}`,
+    }}>
+      {/* glow blob */}
+      <div style={{ position:'absolute', top: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: accentBg, filter: 'blur(40px)', pointerEvents: 'none' }}/>
+
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', position: 'relative' }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--line)',
+            color, display:'grid', placeItems:'center',
+          }}>
+            <Icon name={icon} size={20}/>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, color: 'var(--text-2)', fontWeight: 500 }}>{title}</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color, letterSpacing: -0.5, marginTop: 2, lineHeight: 1 }}>{value.toFixed(0)}{unit}</div>
+          </div>
+        </div>
+        <span style={{
+          padding: '5px 10px', borderRadius: 7,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid var(--line)',
+          color: 'var(--text-2)', fontSize: 11, fontWeight: 600,
+        }}>{badge}</span>
+      </div>
+
+      <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 8, marginBottom: 10, position: 'relative' }}>{sub}</div>
+
+      <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-4)', paddingTop: 4, paddingBottom: 18, width: 28 }}>
+          <span>100%</span><span>50%</span><span>0%</span>
+        </div>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <LineChartLarge data={data} color={color} height={150}/>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 0', fontSize: 10, color: 'var(--text-4)' }}>
+            {times.map((t,i) => <span key={i}>{t}</span>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoStrip({ server, metrics }) {
+  const cells = [
+    { icon: 'cube', title: 'Sistema', lines: [server.os, '64-bit'] },
+    { icon: 'history', title: 'Tiempo activo', lines: [server.uptime, ''] },
+    { icon: 'shield', title: 'Usuarios', lines: ['3 conectados', ''], iconC: 'var(--text-2)' },
+    { icon: 'chart', title: 'Carga promedio', loadAvg: true },
+    { icon: 'wifi', title: 'Red', net: true },
+    { icon: 'check', title: 'Estado', lines: ['Sin alertas', ''], iconC: 'var(--green-2)' },
+  ];
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(6, 1fr)',
+      gap: 0,
+      background: 'rgba(15,20,36,0.5)',
+      border: '1px solid var(--line)',
+      borderRadius: 14,
+      overflow: 'hidden',
+    }}>
+      {cells.map((c, i) => (
+        <div key={i} style={{
+          padding: '14px 16px',
+          borderRight: i < cells.length - 1 ? '1px solid var(--line)' : 'none',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--line)',
+            color: c.iconC || 'var(--text-2)', display: 'grid', placeItems: 'center',
+            flexShrink: 0,
+          }}>
+            <Icon name={c.icon} size={15}/>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, marginBottom: 2 }}>{c.title}</div>
+            {c.loadAvg && (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span className="mono" style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>0.89</span>
+                <span className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>0.74</span>
+                <span className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>0.61</span>
+              </div>
+            )}
+            {c.loadAvg && (
+              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text-4)', marginTop: 1 }}>
+                <span>1m</span><span>5m</span><span>15m</span>
+              </div>
+            )}
+            {c.net && (
+              <div style={{ fontSize: 12.5, color: '#fff', lineHeight: 1.3 }}>
+                <div style={{ color: 'var(--green-2)' }}>↓ {Math.round(180 + metrics.net * 20)} Mbps</div>
+                <div style={{ color: 'var(--blue-2)' }}>↑ {Math.round(30 + metrics.net * 6)} Mbps</div>
+              </div>
+            )}
+            {c.lines && (
+              <>
+                <div style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>{c.lines[0]}</div>
+                {c.lines[1] && <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{c.lines[1]}</div>}
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MiniConsole({ server }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [input, setInput] = useState('');
+  const [lines, setLines] = useState([
+    { k: 'out', t: `Bienvenido a ${server.name} (${server.os})` },
+    { k: 'out', t: "Escribe 'help' para ver los comandos disponibles" },
+    { k: 'prompt', host: server.host, path: '~', cmd: 'ls -lah' },
+    { k: 'out', t: 'total 48K' },
+    { k: 'out', t: 'drwx------    5 root root 4.0K may 20 10:15 .' },
+    { k: 'out', t: 'drwxr-xr-x   18 root root 4.0K may 18 09:02 ..' },
+    { k: 'out', t: '-rw-------    1 root root 3.2K may 20 10:15 .bash_history' },
+    { k: 'out', t: '-rw-r--r--    1 root root  220 may 18 09:02 .bash_logout' },
+    { k: 'out', t: '-rw-r--r--    1 root root 3.7K may 18 09:02 .bashrc' },
+    { k: 'out', t: 'drwx------    2 root root 4.0K may 19 09:10 .cache' },
+  ]);
+
+  const runCmd = (raw) => {
+    const cmd = raw.trim();
+    if (!cmd) return;
+    setLines(p => [...p, { k: 'prompt', host: server.host, path: '~', cmd }, { k: 'out', cls: 'dim', t: `→ '${cmd}' enviado al servidor` }]);
+  };
+
+  return (
+    <div style={{
+      background: 'rgba(15,20,36,0.6)',
+      border: '1px solid var(--line)',
+      borderRadius: 14,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding: '12px 16px',
+        borderBottom: collapsed ? 'none' : '1px solid var(--line)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', color: 'var(--blue-2)', display:'grid', placeItems:'center' }}>
+            <Icon name="terminal" size={14}/>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Consola</span>
+          <StatusDot status="online"/>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+          <ToolBtn icon="trash" label="Limpiar" onClick={() => setLines([])}/>
+          <a href="Terminal.html" title="Abrir en pantalla completa" style={{
+            display:'inline-flex', alignItems:'center', justifyContent: 'center',
+            padding: '6px 9px', borderRadius: 7,
+            background: 'rgba(255,255,255,0.02)', border: '1px solid var(--line)',
+            color: 'var(--text-2)', textDecoration: 'none',
+          }}><Icon name="expand" size={13}/></a>
+          <ToolBtn icon={collapsed ? 'chevron-right' : 'chevron-down'} label={collapsed ? 'Expandir' : 'Contraer'} onClick={() => setCollapsed(c => !c)}/>
+        </div>
+      </div>
+      {!collapsed && (
+        <>
+          <div className="scroll" style={{ maxHeight: 240, overflowY: 'auto', padding: '12px 16px', fontSize: 12.5, lineHeight: 1.55 }}>
+            {lines.map((l, i) => <LogLine key={i} line={l}/>)}
+            <div className="mono" style={{ display:'flex', alignItems:'baseline' }}>
+              <span style={{ color:'var(--green-2)' }}>{server.host}</span>
+              <span style={{ color:'var(--text-3)' }}>:</span>
+              <span style={{ color:'var(--blue-2)' }}>~</span>
+              <span style={{ color:'var(--text-3)', marginRight: 8 }}>#</span>
+              <span className="caret"/>
+            </div>
+          </div>
+          <div style={{ borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px' }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { runCmd(input); setInput(''); }}}
+              placeholder="Escribe un comando…"
+              className="mono"
+              spellCheck="false"
+              style={{
+                flex: 1, background: 'transparent', border: 0, outline: 'none',
+                color: '#fff', fontSize: 13, padding: '6px 8px',
+              }}
+            />
+            <button onClick={() => { runCmd(input); setInput(''); }} style={{
+              display:'inline-flex', alignItems:'center', gap: 6,
+              padding: '7px 12px', borderRadius: 8,
+              background: 'linear-gradient(180deg, #3b82f6, #2f6ed1)',
+              color: '#fff', border: 0, fontWeight: 600, fontSize: 12.5, cursor: 'pointer',
+              boxShadow: '0 6px 18px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
+              fontFamily: 'inherit',
+            }}><Icon name="play" size={12}/> Ejecutar</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DevicesView({ server, metrics }) {
+  const [tab, setTab] = useState('Resumen');
+  const [range, setRange] = useState('Últimos 5 minutos');
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <DevicesHeader server={server}/>
+      <DevicesTabs active={tab} setActive={setTab} range={range} setRange={setRange}/>
+      <div className="scroll" key={tab} style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {tab === 'Resumen' && <ResumenTab server={server} metrics={metrics}/>}
+        {tab === 'Métricas' && <MetricasTab server={server} metrics={metrics}/>}
+        {tab === 'Procesos' && <ProcesosTab server={server} metrics={metrics}/>}
+        {tab === 'Servicios' && <ServiciosTab server={server}/>}
+        {tab === 'Registros' && <RegistrosTab server={server}/>}
+        {tab === 'Alertas' && <AlertasTab server={server}/>}
+        {tab === 'Configuración' && <ConfiguracionTab server={server}/>}
+      </div>
+    </div>
+  );
+}
+
+function ResumenTab({ server, metrics }) {
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <MetricCardBig icon="cpu" title="CPU" value={metrics.cpu} sub="2.56 GHz · 4 núcleos" badge="2.56 GHz" color="var(--blue-2)" accentBg="rgba(59,130,246,0.18)" data={metrics.spark.cpu}/>
+        <MetricCardBig icon="ram" title="RAM" value={metrics.ram} sub="5.4 / 8 GB" badge="8 GB DDR4" color="var(--green-2)" accentBg="rgba(34,197,94,0.18)" data={metrics.spark.ram}/>
+        <MetricCardBig icon="database" title="Disco" value={metrics.disk} sub="201 / 480 GB" badge="NVMe SSD" color="var(--violet-2)" accentBg="rgba(139,92,246,0.18)" data={metrics.spark.disk}/>
+      </div>
+      <InfoStrip server={server} metrics={metrics}/>
+      <MiniConsole server={server}/>
+    </>
+  );
+}
+
+/* ---- shared tab atoms ---- */
+function Panel({ title, action, children, padless }) {
+  return (
+    <div style={{
+      background: 'rgba(15,20,36,0.6)',
+      border: '1px solid var(--line)',
+      borderRadius: 14, overflow: 'hidden',
+    }}>
+      {(title || action) && (
+        <div style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding: '14px 18px',
+          borderBottom: '1px solid var(--line)',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{title}</div>
+          {action}
+        </div>
+      )}
+      <div style={{ padding: padless ? 0 : 18 }}>{children}</div>
+    </div>
+  );
+}
+function Pill({ children, color = 'var(--text-2)', bg = 'rgba(255,255,255,0.04)', border = 'var(--line)' }) {
+  return <span style={{
+    display:'inline-flex', alignItems:'center', gap: 6,
+    padding: '3px 9px', borderRadius: 999,
+    background: bg, border: `1px solid ${border}`, color,
+    fontSize: 11, fontWeight: 600, whiteSpace:'nowrap',
+  }}>{children}</span>;
+}
+
+/* =========================================================
+   MÉTRICAS TAB
+   ========================================================= */
+function MetricasTab({ server, metrics }) {
+  // synthesize per-core data from cpu spark
+  const cores = useMemo(() => Array.from({length: 8}, (_, i) => {
+    return Array.from({length: 28}, (_, j) => {
+      const base = 25 + (i % 4) * 5;
+      return Math.max(2, Math.min(98, base + Math.sin((j + i) * 0.7) * 12 + Math.random() * 20));
+    });
+  }), []);
+  const netIn = useMemo(() => metrics.spark.net.map(v => v * 100 + Math.random() * 20), [metrics.spark.net]);
+  const netOut = useMemo(() => metrics.spark.net.map(v => v * 30 + Math.random() * 8), [metrics.spark.net]);
+
+  return (
+    <>
+      {/* top tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <SmallMetric icon="cpu" label="CPU promedio" value={`${Math.round(metrics.cpu)}%`} delta="+2.1%" color="var(--blue-2)" data={metrics.spark.cpu}/>
+        <SmallMetric icon="ram" label="Memoria" value={`${(metrics.ram/100*8).toFixed(1)} GB`} delta="−0.4 GB" color="var(--green-2)" data={metrics.spark.ram}/>
+        <SmallMetric icon="wifi" label="Red total" value={`${metrics.net.toFixed(1)} MB/s`} delta="+12%" color="var(--violet-2)" data={metrics.spark.net}/>
+        <SmallMetric icon="shield" label="Procesos" value="142" delta="estable" color="var(--cyan)" data={metrics.spark.lat}/>
+      </div>
+
+      {/* main historical chart */}
+      <Panel
+        title="Uso del sistema · última hora"
+        action={
+          <div style={{ display:'flex', alignItems:'center', gap: 14, fontSize: 12, color:'var(--text-3)' }}>
+            <LegendDot c="var(--blue-2)">CPU</LegendDot>
+            <LegendDot c="var(--green-2)">RAM</LegendDot>
+            <LegendDot c="var(--violet-2)">Disco I/O</LegendDot>
+          </div>
+        }>
+        <MultiSeriesChart series={[
+          { color: 'var(--blue-2)', data: metrics.spark.cpu },
+          { color: 'var(--green-2)', data: metrics.spark.ram },
+          { color: 'var(--violet-2)', data: metrics.spark.disk },
+        ]} height={220}/>
+      </Panel>
+
+      {/* per-core + network */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
+        <Panel title={`CPU por núcleo (${cores.length})`} action={<Pill>1.2 — 78%</Pill>}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            {cores.map((c, i) => {
+              const last = c[c.length - 1];
+              return (
+                <div key={i} style={{
+                  padding: 10, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.025)',
+                  border: '1px solid var(--line)',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 6 }}>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>core {i}</span>
+                    <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{Math.round(last)}%</span>
+                  </div>
+                  <Sparkline data={c} color="var(--blue-2)" width={120} height={24}/>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+
+        <Panel title="Red · entrada / salida" action={<Pill color="var(--green-2)" bg="rgba(34,197,94,0.10)" border="rgba(34,197,94,0.3)">218 Mbps</Pill>}>
+          <div style={{ display: 'flex', gap: 18, marginBottom: 10 }}>
+            <BigStat label="Entrada" value="218" unit="Mbps" color="var(--green-2)"/>
+            <BigStat label="Salida" value="42" unit="Mbps" color="var(--blue-2)"/>
+            <BigStat label="Paquetes/s" value="14.2K" color="var(--violet-2)"/>
+          </div>
+          <MultiSeriesChart series={[
+            { color: 'var(--green-2)', data: netIn },
+            { color: 'var(--blue-2)', data: netOut },
+          ]} height={130}/>
+        </Panel>
+      </div>
+
+      {/* breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <Panel title="Disco · uso por punto de montaje">
+          <DiskRow path="/" used={201} total={480} color="var(--violet-2)"/>
+          <DiskRow path="/var" used={64} total={120} color="var(--blue-2)"/>
+          <DiskRow path="/home" used={12} total={80} color="var(--green-2)"/>
+          <DiskRow path="/tmp" used={0.8} total={8} color="var(--amber)" last/>
+        </Panel>
+        <Panel title="Carga promedio">
+          <div style={{ display:'flex', alignItems:'baseline', gap: 18, marginBottom: 16 }}>
+            <BigStat label="1 min" value="0.89" color="var(--green-2)"/>
+            <BigStat label="5 min" value="0.74" color="var(--blue-2)"/>
+            <BigStat label="15 min" value="0.61" color="var(--violet-2)"/>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>Tendencia (15 min)</div>
+          <Sparkline data={Array.from({length: 30}, () => 0.5 + Math.random()*0.5)} color="var(--green-2)" width={300} height={56}/>
+        </Panel>
+        <Panel title="Temperatura · sensores">
+          <TempRow label="CPU package" v={62} max={95}/>
+          <TempRow label="GPU" v={48} max={90}/>
+          <TempRow label="NVMe" v={41} max={75}/>
+          <TempRow label="Chassis" v={28} max={60} last/>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function SmallMetric({ icon, label, value, delta, color, data }) {
+  const isUp = delta && (delta.startsWith('+'));
+  return (
+    <div style={{
+      padding: 14, borderRadius: 12,
+      background: 'rgba(15,20,36,0.6)',
+      border: '1px solid var(--line)',
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems:'center', gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', color, display:'grid', placeItems:'center' }}>
+            <Icon name={icon} size={14}/>
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{label}</span>
+        </div>
+        <span style={{ fontSize: 11, color: isUp ? 'var(--green-2)' : delta?.startsWith('−') ? 'var(--red)' : 'var(--text-3)', fontWeight: 600 }}>{delta}</span>
+      </div>
+      <div style={{ display:'flex', alignItems: 'flex-end', justifyContent:'space-between' }}>
+        <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>{value}</span>
+        <Sparkline data={data} color={color} width={90} height={28}/>
+      </div>
+    </div>
+  );
+}
+
+function LegendDot({ c, children }) {
+  return <span style={{ display:'inline-flex', alignItems:'center', gap: 6 }}>
+    <span style={{ width: 8, height: 8, borderRadius: 2, background: c, boxShadow: `0 0 6px ${c}` }}/>{children}
+  </span>;
+}
+
+function MultiSeriesChart({ series, height = 180 }) {
+  const width = 100;
+  const padY = 10;
+  const innerH = height - padY * 2;
+  const max = Math.max(...series.flatMap(s => s.data), 100);
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }}>
+      {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+        <line key={i} x1="0" x2={width} y1={padY + p*innerH} y2={padY + p*innerH} stroke="rgba(255,255,255,0.05)" strokeWidth="0.3"/>
+      ))}
+      {series.map((s, si) => {
+        const stepX = width / (s.data.length - 1);
+        const points = s.data.map((v, i) => [i * stepX, padY + (1 - v/max) * innerH]);
+        const path = points.map((p,i) => (i===0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
+        const area = path + ` L ${width} ${height} L 0 ${height} Z`;
+        const id = `mss_${si}_${Math.random().toString(36).slice(2,6)}`;
+        const last = points[points.length - 1];
+        return (
+          <g key={si}>
+            <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={s.color} stopOpacity="0.20"/><stop offset="1" stopColor={s.color} stopOpacity="0"/></linearGradient></defs>
+            <path d={area} fill={`url(#${id})`}/>
+            <path d={path} fill="none" stroke={s.color} strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={{ filter: `drop-shadow(0 0 3px ${s.color})` }}/>
+            <circle cx={last[0]} cy={last[1]} r="1.8" fill={s.color} vectorEffect="non-scaling-stroke"/>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function BigStat({ label, value, unit, color }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, marginBottom: 2 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+        <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: color || '#fff' }}>{value}</span>
+        {unit && <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{unit}</span>}
+      </div>
+    </div>
+  );
+}
+
+function DiskRow({ path, used, total, color, last }) {
+  const pct = (used / total) * 100;
+  return (
+    <div style={{ padding: '10px 0', borderBottom: last ? 'none' : '1px solid var(--line)' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 6 }}>
+        <span className="mono" style={{ fontSize: 12.5, color: '#fff' }}>{path}</span>
+        <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{used} / {total} GB</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${color}, ${color})`, boxShadow: `0 0 6px ${color}` }}/>
+      </div>
+    </div>
+  );
+}
+
+function TempRow({ label, v, max, last }) {
+  const pct = v / max * 100;
+  const color = pct > 75 ? 'var(--red)' : pct > 55 ? 'var(--amber)' : 'var(--green-2)';
+  return (
+    <div style={{ padding: '10px 0', borderBottom: last ? 'none' : '1px solid var(--line)' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 12.5, color: '#fff' }}>{label}</span>
+        <span className="mono" style={{ fontSize: 12.5, color, fontWeight: 600 }}>{v}°C</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, boxShadow: `0 0 6px ${color}` }}/>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   PROCESOS TAB
+   ========================================================= */
+const PROCESSES = [
+  { pid: 1432, user: 'root',     cpu: 2.1,  mem: 0.8,  time: '1h 32m', state: 'running', cmd: 'nginx: master process /usr/sbin/nginx' },
+  { pid: 1433, user: 'www-data', cpu: 1.8,  mem: 0.6,  time: '1h 32m', state: 'running', cmd: 'nginx: worker process' },
+  { pid: 1434, user: 'www-data', cpu: 1.7,  mem: 0.6,  time: '1h 32m', state: 'running', cmd: 'nginx: worker process' },
+  { pid: 2104, user: 'postgres', cpu: 5.4,  mem: 3.1,  time: '4h 12m', state: 'running', cmd: 'postgres -D /var/lib/postgresql/15/main' },
+  { pid: 2199, user: 'postgres', cpu: 0.4,  mem: 2.2,  time: '4h 12m', state: 'sleeping', cmd: 'postgres: checkpointer' },
+  { pid: 2200, user: 'postgres', cpu: 0.2,  mem: 1.9,  time: '4h 12m', state: 'sleeping', cmd: 'postgres: background writer' },
+  { pid: 4421, user: 'app',      cpu: 8.2,  mem: 4.6,  time: '47m',    state: 'running', cmd: 'node /srv/api/dist/index.js' },
+  { pid: 4422, user: 'app',      cpu: 12.4, mem: 5.2,  time: '47m',    state: 'running', cmd: 'node /srv/worker/billing.js' },
+  { pid: 5012, user: 'redis',    cpu: 0.3,  mem: 0.4,  time: '2h 04m', state: 'running', cmd: 'redis-server *:6379' },
+  { pid: 6201, user: 'root',     cpu: 0.1,  mem: 0.2,  time: '15d',    state: 'sleeping', cmd: '/usr/sbin/cron -f' },
+  { pid: 6310, user: 'root',     cpu: 0.0,  mem: 0.1,  time: '15d',    state: 'sleeping', cmd: '/lib/systemd/systemd-journald' },
+  { pid: 7411, user: 'docker',   cpu: 3.2,  mem: 1.8,  time: '8h',     state: 'running', cmd: 'dockerd --containerd /run/containerd/containerd.sock' },
+  { pid: 8104, user: 'app',      cpu: 0.0,  mem: 0.0,  time: '02s',    state: 'zombie', cmd: 'sh -c npm run cleanup' },
+];
+
+function ProcesosTab({ server, metrics }) {
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState('cpu');
+  const [filter, setFilter] = useState('Todos');
+
+  const filtered = PROCESSES
+    .filter(p => filter === 'Todos' || (filter === 'En ejecución' ? p.state === 'running' : filter === 'En espera' ? p.state === 'sleeping' : p.state === 'zombie'))
+    .filter(p => !query || p.cmd.toLowerCase().includes(query.toLowerCase()) || p.user.includes(query) || String(p.pid).includes(query))
+    .sort((a,b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0));
+
+  const stateStyles = {
+    running:  { c: 'var(--green-2)', bg: 'rgba(34,197,94,0.10)', b: 'rgba(34,197,94,0.3)',  l: 'activo' },
+    sleeping: { c: 'var(--blue-2)',  bg: 'rgba(59,130,246,0.10)', b: 'rgba(59,130,246,0.3)',  l: 'en espera' },
+    zombie:   { c: 'var(--red)',     bg: 'rgba(239,68,68,0.10)',  b: 'rgba(239,68,68,0.3)',   l: 'zombie' },
+  };
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <SmallStat label="Procesos totales" value={PROCESSES.length} icon="cube"/>
+        <SmallStat label="En ejecución"     value={PROCESSES.filter(p => p.state==='running').length}  icon="play"  color="var(--green-2)"/>
+        <SmallStat label="En espera"        value={PROCESSES.filter(p => p.state==='sleeping').length} icon="pause" color="var(--blue-2)"/>
+        <SmallStat label="Zombies"          value={PROCESSES.filter(p => p.state==='zombie').length}   icon="warn"  color="var(--red)"/>
+      </div>
+
+      <Panel
+        padless
+        title={`${filtered.length} procesos`}
+        action={
+          <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
+            <SearchInput value={query} setValue={setQuery} placeholder="Buscar proceso, usuario o PID…"/>
+            <SegSelect value={filter} setValue={setFilter} options={['Todos','En ejecución','En espera','zombie'].map(o => o === 'zombie' ? 'Zombies' : o)}/>
+          </div>
+        }>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ color: 'var(--text-3)', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                <Th>PID</Th><Th>Usuario</Th>
+                <Th onClick={() => setSortBy('cpu')} active={sortBy==='cpu'}>%CPU</Th>
+                <Th onClick={() => setSortBy('mem')} active={sortBy==='mem'}>%MEM</Th>
+                <Th>Tiempo</Th><Th>Estado</Th><Th>Comando</Th><Th style={{textAlign:'right'}}>Acciones</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => {
+                const ss = stateStyles[p.state];
+                return (
+                  <tr key={p.pid} style={{ borderTop: '1px solid var(--line)' }}
+                    onMouseEnter={(e)=>e.currentTarget.style.background='rgba(255,255,255,0.025)'}
+                    onMouseLeave={(e)=>e.currentTarget.style.background='transparent'}
+                  >
+                    <Td><span className="mono" style={{color:'var(--text-2)'}}>{p.pid}</span></Td>
+                    <Td><span style={{color:'#fff'}}>{p.user}</span></Td>
+                    <Td><Bar value={p.cpu} max={20} color="var(--blue-2)"/></Td>
+                    <Td><Bar value={p.mem} max={10} color="var(--green-2)"/></Td>
+                    <Td><span className="mono" style={{color:'var(--text-3)'}}>{p.time}</span></Td>
+                    <Td><Pill color={ss.c} bg={ss.bg} border={ss.b}>{ss.l}</Pill></Td>
+                    <Td><span className="mono" style={{color:'var(--text-2)', whiteSpace:'nowrap', textOverflow:'ellipsis', overflow:'hidden', maxWidth: 320, display:'block'}}>{p.cmd}</span></Td>
+                    <Td style={{textAlign:'right', whiteSpace:'nowrap'}}>
+                      <RowBtn icon="pause" title="Suspender"/>
+                      <RowBtn icon="trash" title="Detener" tone="danger"/>
+                      <RowBtn icon="more" title="Más"/>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </>
+  );
+}
+function SmallStat({ label, value, icon, color = 'var(--text-2)' }) {
+  return (
+    <div style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(15,20,36,0.6)', border: '1px solid var(--line)', display:'flex', alignItems:'center', gap: 12 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', color, display:'grid', placeItems:'center' }}>
+        <Icon name={icon} size={16}/>
+      </div>
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{label}</div>
+        <div className="mono" style={{ fontSize: 22, fontWeight: 700, color:'#fff', lineHeight: 1 }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+function Th({ children, onClick, active, style }) {
+  return <th onClick={onClick} style={{ textAlign: 'left', padding: '12px 14px', fontWeight: 600, fontSize: 11, cursor: onClick ? 'pointer' : 'default', color: active ? 'var(--blue-2)' : 'var(--text-3)', ...style }}>
+    {children}{active && ' ▾'}
+  </th>;
+}
+function Td({ children, style }) {
+  return <td style={{ padding: '10px 14px', verticalAlign: 'middle', ...style }}>{children}</td>;
+}
+function Bar({ value, max, color }) {
+  const pct = Math.min(100, (value / max) * 100);
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: 8, minWidth: 100 }}>
+      <span className="mono" style={{ fontSize: 12, color: '#fff', minWidth: 36 }}>{value.toFixed(1)}</span>
+      <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, boxShadow: `0 0 4px ${color}` }}/>
+      </div>
+    </div>
+  );
+}
+function RowBtn({ icon, title, tone }) {
+  return <button title={title} style={{
+    width: 26, height: 26, borderRadius: 6, marginLeft: 4,
+    background: 'transparent', border: '1px solid transparent',
+    color: tone === 'danger' ? '#fca5a5' : 'var(--text-3)', cursor: 'pointer',
+    display:'inline-grid', placeItems:'center',
+  }}
+    onMouseEnter={(e)=>{ e.currentTarget.style.background = tone==='danger' ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+    onMouseLeave={(e)=>{ e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
+  ><Icon name={icon} size={13}/></button>;
+}
+
+function SearchInput({ value, setValue, placeholder }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <span style={{ position:'absolute', left: 10, top:'50%', transform:'translateY(-50%)', color:'var(--text-3)', display:'inline-flex' }}><Icon name="search" size={13}/></span>
+      <input value={value} onChange={(e)=>setValue(e.target.value)} placeholder={placeholder} style={{
+        padding: '7px 10px 7px 30px', width: 280,
+        background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 8,
+        color: 'var(--text)', fontFamily: 'inherit', fontSize: 12.5, outline: 'none',
+      }}/>
+    </div>
+  );
+}
+function SegSelect({ value, setValue, options }) {
+  return (
+    <div style={{ display: 'inline-flex', padding: 3, background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 8 }}>
+      {options.map(o => (
+        <button key={o} onClick={() => setValue(o)} style={{
+          padding: '5px 10px', borderRadius: 6,
+          background: value === o ? 'rgba(59,130,246,0.16)' : 'transparent',
+          border: value === o ? '1px solid rgba(59,130,246,0.4)' : '1px solid transparent',
+          color: value === o ? '#fff' : 'var(--text-3)',
+          fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
+        }}>{o}</button>
+      ))}
+    </div>
+  );
+}
+
+/* =========================================================
+   SERVICIOS TAB
+   ========================================================= */
+const SERVICES = [
+  { name: 'nginx',           desc: 'High-performance web server',           state: 'active', enabled: true,  since: '1h 32m', cpu: 2.1, mem: '21.4M' },
+  { name: 'postgresql',      desc: 'PostgreSQL relational database',        state: 'active', enabled: true,  since: '4h 12m', cpu: 5.4, mem: '342M' },
+  { name: 'redis-server',    desc: 'In-memory data structure store',        state: 'active', enabled: true,  since: '2h 04m', cpu: 0.3, mem: '48M'  },
+  { name: 'docker',          desc: 'Container runtime',                     state: 'active', enabled: true,  since: '8h',     cpu: 3.2, mem: '186M' },
+  { name: 'api-gateway',     desc: 'Internal HTTP gateway (app)',           state: 'active', enabled: true,  since: '47m',    cpu: 8.2, mem: '512M' },
+  { name: 'worker-billing',  desc: 'Background billing worker',             state: 'active', enabled: true,  since: '47m',    cpu: 12.4,mem: '348M' },
+  { name: 'fail2ban',        desc: 'Brute-force protection',                state: 'active', enabled: true,  since: '15d',    cpu: 0.0, mem: '12M'  },
+  { name: 'unattended-upgrades', desc: 'Automatic security updates',        state: 'inactive', enabled: true, since: '—',      cpu: 0,   mem: '0'    },
+  { name: 'snapd',           desc: 'Snap package daemon',                   state: 'failed', enabled: false, since: '—',      cpu: 0,   mem: '0'    },
+];
+function ServiciosTab({ server }) {
+  const [filter, setFilter] = useState('Todos');
+  const stateMeta = {
+    active:   { c: 'var(--green-2)', bg: 'rgba(34,197,94,0.10)', b:'rgba(34,197,94,0.3)', l:'Activo' },
+    inactive: { c: 'var(--text-3)',  bg: 'rgba(255,255,255,0.04)', b:'var(--line)', l:'Inactivo' },
+    failed:   { c: 'var(--red)',     bg: 'rgba(239,68,68,0.10)', b:'rgba(239,68,68,0.3)', l:'Fallo' },
+  };
+  const filtered = SERVICES.filter(s => filter === 'Todos' || (filter === 'Activos' ? s.state === 'active' : filter === 'Inactivos' ? s.state === 'inactive' : s.state === 'failed'));
+  return (
+    <>
+      <div style={{ display:'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <SmallStat label="Total servicios" value={SERVICES.length} icon="cube"/>
+        <SmallStat label="Activos"   value={SERVICES.filter(s => s.state==='active').length}   icon="check" color="var(--green-2)"/>
+        <SmallStat label="Inactivos" value={SERVICES.filter(s => s.state==='inactive').length} icon="pause" color="var(--text-3)"/>
+        <SmallStat label="Con fallos" value={SERVICES.filter(s => s.state==='failed').length}  icon="warn"  color="var(--red)"/>
+      </div>
+      <Panel padless title={`${filtered.length} servicios`} action={<SegSelect value={filter} setValue={setFilter} options={['Todos','Activos','Inactivos','Con fallos']}/>}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {filtered.map((s, i) => {
+            const m = stateMeta[s.state];
+            return (
+              <div key={s.name} style={{
+                display: 'grid', gridTemplateColumns: '32px 1.4fr 0.8fr 0.6fr 0.6fr auto',
+                gap: 14, alignItems: 'center',
+                padding: '14px 18px',
+                borderTop: i === 0 ? 'none' : '1px solid var(--line)',
+              }}
+                onMouseEnter={(e)=>e.currentTarget.style.background='rgba(255,255,255,0.02)'}
+                onMouseLeave={(e)=>e.currentTarget.style.background='transparent'}
+              >
+                <div style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${m.b}`, background: m.bg, color: m.c, display:'grid', placeItems: 'center' }}>
+                  <Icon name={s.state === 'active' ? 'check' : s.state === 'failed' ? 'warn' : 'pause'} size={14}/>
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 13, color:'#fff', fontWeight: 600 }}>{s.name}.service</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{s.desc}</div>
+                </div>
+                <Pill color={m.c} bg={m.bg} border={m.b}>{m.l}</Pill>
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{s.enabled ? 'Habilitado' : 'Deshabilitado'}</span>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{s.since} · {s.mem}</span>
+                <div style={{ display:'flex', gap: 6 }}>
+                  <RowBtn icon="refresh" title="Reiniciar"/>
+                  <RowBtn icon="pause" title="Detener" tone="danger"/>
+                  <RowBtn icon="more" title="Más"/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+/* =========================================================
+   REGISTROS TAB
+   ========================================================= */
+function RegistrosTab({ server }) {
+  const [lines, setLines] = useState(() => Array.from({length: 18}, (_, i) => fakeLog(i)));
+  const [paused, setPaused] = useState(false);
+  const [sev, setSev] = useState('Todos');
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (paused) return;
+    const id = setInterval(() => {
+      setLines(prev => {
+        const next = [...prev, fakeLog(prev.length)];
+        if (next.length > 200) next.splice(0, next.length - 200);
+        return next;
+      });
+    }, 900);
+    return () => clearInterval(id);
+  }, [paused]);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines]);
+  const filtered = lines.filter(l => sev === 'Todos' || (sev === 'Info' ? l.sev === 'info' : sev === 'Warn' ? l.sev === 'warn' : sev === 'Error' ? l.sev === 'err' : l.sev === 'ok'));
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <SmallStat label="Eventos · 1h" value={`${lines.length}`}     icon="chart" color="var(--blue-2)"/>
+        <SmallStat label="Info"          value={lines.filter(l=>l.sev==='info').length}  icon="check" color="var(--blue-2)"/>
+        <SmallStat label="Advertencias"  value={lines.filter(l=>l.sev==='warn').length}  icon="warn"  color="var(--amber)"/>
+        <SmallStat label="Errores"       value={lines.filter(l=>l.sev==='err').length}   icon="warn"  color="var(--red)"/>
+      </div>
+      <Panel padless title={`Registro del sistema · ${filtered.length} líneas`} action={
+        <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
+          <SegSelect value={sev} setValue={setSev} options={['Todos','Info','OK','Warn','Error']}/>
+          <button onClick={()=>setPaused(p=>!p)} style={{
+            display:'inline-flex', alignItems:'center', gap: 6, padding: '6px 10px', borderRadius: 8,
+            background: paused ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.025)',
+            border: '1px solid var(--line)',
+            color: paused ? 'var(--violet-2)' : 'var(--text-2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+          }}><Icon name={paused?'play':'pause'} size={12}/> {paused?'Reanudar':'Pausar'}</button>
+        </div>
+      }>
+        <div ref={scrollRef} className="scroll" style={{ height: 460, overflowY: 'auto', padding: '12px 18px', fontSize: 12.5 }}>
+          {filtered.map((l, i) => <LogLine key={l._id || i} line={l} animate={i > filtered.length - 3}/>)}
+        </div>
+      </Panel>
+    </>
+  );
+}
+function fakeLog(i) {
+  const tpl = STREAM_TEMPLATES[Math.floor(Math.random() * STREAM_TEMPLATES.length)];
+  const now = new Date(Date.now() - (1000 * (50 - i)));
+  const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const text = tpl.t
+    .replace('%MIN%', String(now.getMinutes()).padStart(2,'0'))
+    .replace('%SEC%', String(now.getSeconds()).padStart(2,'0'))
+    .replace(/%RID%/g, () => Math.random().toString(36).slice(2, 7));
+  return { ...tpl, t: text, time, _id: Date.now() + i + Math.random() };
+}
+
+/* =========================================================
+   ALERTAS TAB
+   ========================================================= */
+const ALERTS = [
+  { id: 'a1', sev: 'warn', title: 'Memoria por encima del 65%',          src: 'monitor', time: 'hace 2 min', desc: 'RSS rondando 68% durante 5 min. Considera revisar workers de billing.', acked: false },
+  { id: 'a2', sev: 'info', title: 'Despliegue completado · api-gateway', src: 'deploy',  time: 'hace 14 min', desc: 'Versión v2.18.4 publicada desde main · jobs OK · sin downtime.', acked: false },
+  { id: 'a3', sev: 'err',  title: 'Servicio snapd con fallo persistente', src: 'systemd', time: 'hace 1 h',  desc: 'snapd.service exited code=1. 4 reintentos automáticos sin éxito.', acked: false },
+  { id: 'a4', sev: 'warn', title: 'Latencia elevada · región eu-west-2', src: 'edge',    time: 'hace 3 h',  desc: 'P95 latencia subió a 320ms (umbral 250ms) durante 12 min.', acked: true },
+  { id: 'a5', sev: 'ok',   title: 'Certificado TLS renovado',            src: 'cert',    time: 'hace 1 d',   desc: 'control.center renovado · expira en 89 días.', acked: true },
+];
+function AlertasTab({ server }) {
+  const [tab, setTab] = useState('Activas');
+  const list = ALERTS.filter(a => tab === 'Activas' ? !a.acked : a.acked);
+  const meta = {
+    warn: { c: 'var(--amber)',  bg: 'rgba(245,158,11,0.10)', b: 'rgba(245,158,11,0.3)', l: 'Advertencia' },
+    err:  { c: 'var(--red)',    bg: 'rgba(239,68,68,0.10)',  b: 'rgba(239,68,68,0.3)',   l: 'Crítico'    },
+    info: { c: 'var(--blue-2)', bg: 'rgba(59,130,246,0.10)', b: 'rgba(59,130,246,0.3)',  l: 'Info'       },
+    ok:   { c: 'var(--green-2)',bg: 'rgba(34,197,94,0.10)',  b: 'rgba(34,197,94,0.3)',   l: 'Resuelto'   },
+  };
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <SmallStat label="Activas"      value={ALERTS.filter(a => !a.acked).length} icon="bell" color="var(--amber)"/>
+        <SmallStat label="Críticas"     value={ALERTS.filter(a => a.sev==='err' && !a.acked).length} icon="warn" color="var(--red)"/>
+        <SmallStat label="Reconocidas"  value={ALERTS.filter(a => a.acked).length} icon="check" color="var(--green-2)"/>
+        <SmallStat label="Reglas"       value={24} icon="shield"/>
+      </div>
+      <Panel padless action={<SegSelect value={tab} setValue={setTab} options={['Activas', 'Reconocidas']}/>}
+        title={`${list.length} ${tab.toLowerCase()}`}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {list.map((a, i) => {
+            const m = meta[a.sev];
+            return (
+              <div key={a.id} style={{
+                display: 'grid', gridTemplateColumns: '40px 1fr auto',
+                gap: 14, alignItems: 'center', padding: '14px 18px',
+                borderTop: i === 0 ? 'none' : '1px solid var(--line)',
+              }}>
+                <div style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${m.b}`, background: m.bg, color: m.c, display:'grid', placeItems:'center' }}>
+                  <Icon name={a.sev === 'err' ? 'warn' : a.sev === 'ok' ? 'check' : a.sev === 'info' ? 'bell' : 'warn'} size={16}/>
+                </div>
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap: 10, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color:'#fff' }}>{a.title}</span>
+                    <Pill color={m.c} bg={m.bg} border={m.b}>{m.l}</Pill>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>· {a.src}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-4)' }}>· {a.time}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45 }}>{a.desc}</div>
+                </div>
+                <div style={{ display:'flex', gap: 6 }}>
+                  {!a.acked && <button style={{
+                    padding: '6px 12px', borderRadius: 7, border: '1px solid var(--line)',
+                    background: 'rgba(255,255,255,0.025)', color: 'var(--text)', fontSize: 12, cursor:'pointer', fontFamily:'inherit',
+                  }}>Reconocer</button>}
+                  <RowBtn icon="more" title="Más"/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+/* =========================================================
+   CONFIGURACIÓN TAB
+   ========================================================= */
+function ConfiguracionTab({ server }) {
+  const [vals, setVals] = useState({
+    hostname: server.name.toLowerCase(),
+    autoRestart: true,
+    notif: 'Sólo críticas',
+    interval: '15s',
+    timezone: 'America/Mexico_City',
+    sshKeyOnly: true,
+    fa2: true,
+    autoUpdates: false,
+  });
+  const set = (k, v) => setVals(s => ({...s, [k]: v}));
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <Panel title="General">
+          <SettingField label="Nombre de host" hint="Identificador único del dispositivo">
+            <TextInput value={vals.hostname} onChange={(v)=>set('hostname', v)}/>
+          </SettingField>
+          <SettingField label="Zona horaria" hint="Usada en eventos y registros">
+            <DropdownInput value={vals.timezone} options={['America/Mexico_City','America/New_York','Europe/Madrid','UTC']} onChange={(v)=>set('timezone', v)}/>
+          </SettingField>
+          <SettingField label="Reinicio automático" hint="Reinicia si el dispositivo no responde">
+            <Toggle value={vals.autoRestart} onChange={(v)=>set('autoRestart', v)}/>
+          </SettingField>
+        </Panel>
+
+        <Panel title="Monitoreo">
+          <SettingField label="Intervalo de polling" hint="Cada cuanto se consultan métricas">
+            <DropdownInput value={vals.interval} options={['5s','15s','30s','1m','5m']} onChange={(v)=>set('interval', v)}/>
+          </SettingField>
+          <SettingField label="Notificaciones" hint="Qué eventos llegan a tu correo">
+            <DropdownInput value={vals.notif} options={['Todas','Sólo críticas','Personalizado','Ninguna']} onChange={(v)=>set('notif', v)}/>
+          </SettingField>
+          <SettingField label="Umbrales de alerta">
+            <div style={{ display:'flex', gap: 12 }}>
+              <ThresholdPill label="CPU" v="85%"/>
+              <ThresholdPill label="RAM" v="80%"/>
+              <ThresholdPill label="Disco" v="90%"/>
+            </div>
+          </SettingField>
+        </Panel>
+
+        <Panel title="Seguridad">
+          <SettingField label="Acceso sólo con clave SSH" hint="Bloquea autenticación por contraseña">
+            <Toggle value={vals.sshKeyOnly} onChange={(v)=>set('sshKeyOnly', v)}/>
+          </SettingField>
+          <SettingField label="Doble factor (2FA)" hint="Requerido para acciones críticas">
+            <Toggle value={vals.fa2} onChange={(v)=>set('fa2', v)}/>
+          </SettingField>
+          <SettingField label="Actualizaciones automáticas" hint="Aplicar parches de seguridad sin confirmación">
+            <Toggle value={vals.autoUpdates} onChange={(v)=>set('autoUpdates', v)}/>
+          </SettingField>
+        </Panel>
+
+        <Panel title="Conexión SSH">
+          <SettingField label="Host">
+            <span className="mono" style={{ color:'#fff' }}>{server.host}@{server.ip}:22</span>
+          </SettingField>
+          <SettingField label="Cifrado">
+            <span className="mono" style={{ color:'var(--green-2)' }}>ED25519 · AES-256-GCM</span>
+          </SettingField>
+          <SettingField label="Claves autorizadas">
+            <div style={{ display:'flex', flexDirection: 'column', gap: 8 }}>
+              {['admin@mac-pro · ed25519 · 2 días', 'ci-runner · ed25519 · hace 3 sem', 'backup-job · rsa · expira en 12 días'].map(k => (
+                <div key={k} className="mono" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: '8px 10px', background:'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 8, fontSize: 12 }}>
+                  <span style={{ color:'var(--text-2)' }}><Icon name="lock" size={12} style={{display:'inline-block', verticalAlign:-2, marginRight:6}}/> {k}</span>
+                  <RowBtn icon="trash" title="Revocar" tone="danger"/>
+                </div>
+              ))}
+            </div>
+          </SettingField>
+        </Panel>
+      </div>
+
+      <div style={{ display:'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button style={{ padding: '9px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', color: 'var(--text)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+        <button style={{ padding: '9px 16px', borderRadius: 10, background: 'linear-gradient(180deg, #3b82f6, #2f6ed1)', border: 0, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 6px 18px rgba(59,130,246,0.32), inset 0 1px 0 rgba(255,255,255,0.18)', fontFamily: 'inherit' }}>Guardar cambios</button>
+      </div>
+    </>
+  );
+}
+function SettingField({ label, hint, children }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
+      <div>
+        <div style={{ fontSize: 13, color: '#fff', fontWeight: 500 }}>{label}</div>
+        {hint && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{hint}</div>}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+function TextInput({ value, onChange }) {
+  return <input value={value} onChange={(e)=>onChange(e.target.value)} style={{
+    padding: '7px 10px', minWidth: 220,
+    background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 8,
+    color: '#fff', fontFamily: 'inherit', fontSize: 12.5, outline: 'none',
+  }}/>;
+}
+function DropdownInput({ value, options, onChange }) {
+  return (
+    <select value={value} onChange={(e)=>onChange(e.target.value)} style={{
+      padding: '7px 28px 7px 10px', minWidth: 200,
+      background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 8,
+      color: '#fff', fontFamily: 'inherit', fontSize: 12.5, outline: 'none', appearance: 'none',
+      backgroundImage: 'linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%)',
+      backgroundPosition: 'calc(100% - 14px) center, calc(100% - 9px) center',
+      backgroundSize: '5px 5px, 5px 5px',
+      backgroundRepeat: 'no-repeat',
+    }}>
+      {options.map(o => <option key={o} value={o} style={{background:'#0f1424'}}>{o}</option>)}
+    </select>
+  );
+}
+function Toggle({ value, onChange }) {
+  return (
+    <button onClick={()=>onChange(!value)} style={{
+      width: 42, height: 24, borderRadius: 999, position: 'relative', cursor: 'pointer',
+      background: value ? 'linear-gradient(180deg, #3b82f6, #2f6ed1)' : 'rgba(255,255,255,0.06)',
+      border: '1px solid ' + (value ? 'rgba(59,130,246,0.5)' : 'var(--line)'),
+      boxShadow: value ? '0 0 10px rgba(59,130,246,0.4), inset 0 1px 0 rgba(255,255,255,0.18)' : 'none',
+      transition: 'all 180ms ease', padding: 0,
+    }}>
+      <span style={{
+        position: 'absolute', top: 2, left: value ? 20 : 2,
+        width: 18, height: 18, borderRadius: '50%', background: '#fff',
+        transition: 'left 180ms cubic-bezier(.4,.2,.2,1)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+      }}/>
+    </button>
+  );
+}
+function ThresholdPill({ label, v }) {
+  return <div style={{
+    padding: '6px 12px', borderRadius: 8,
+    background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)',
+    fontSize: 12, color: 'var(--text-2)',
+  }}><span style={{ color:'var(--text-3)', marginRight: 6 }}>{label}</span><span className="mono" style={{color:'#fff'}}>{v}</span></div>;
+}
+
+/* =========================================================
+   APP
+   ========================================================= */
+function App() {
+  const [view, setView] = useState('devices');
+  const [activeServerId, setActiveServerId] = useState('srv-01');
+  const [railExpanded, setRailExpanded] = useState(false);
+  const [query, setQuery] = useState('');
+  const [tabs, setTabs] = useState([
+    { id: 't1', label: 'root@srv-01: ~', status: 'online', serverId: 'srv-01' },
+    { id: 't2', label: 'postgres@db-prod: ~', status: 'online', serverId: 'db-prod' },
+    { id: 't3', label: 'deploy@web-prod: /var/log', status: 'online', serverId: 'web-prod' },
+    { id: 't4', label: 'root@srv-03: ~', status: 'warning', serverId: 'srv-03' },
+  ]);
+  const [activeTab, setActiveTab] = useState('t1');
+  const [rightOpen, setRightOpen] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [follow, setFollow] = useState(true);
+
+  const server = SERVERS.find(s => s.id === activeServerId) || SERVERS[0];
+
+  const addTab = () => {
+    const id = 't' + Math.random().toString(36).slice(2, 6);
+    setTabs(t => [...t, { id, label: `${server.host}: ~`, status: server.status, serverId: server.id }]);
+    setActiveTab(id);
+  };
+  const closeTab = (id) => {
+    setTabs(t => {
+      const next = t.filter(x => x.id !== id);
+      if (id === activeTab && next.length) setActiveTab(next[0].id);
+      return next;
+    });
+  };
+
+  // live metrics
+  const [metrics, setMetrics] = useState({
+    cpu: 32, ram: 68, disk: 42, net: 2.1, lat: 12,
+    spark: {
+      cpu: Array.from({length: 30}, () => 25 + Math.random()*20),
+      ram: Array.from({length: 30}, () => 60 + Math.random()*15),
+      disk: Array.from({length: 30}, () => 38 + Math.random()*8),
+      net: Array.from({length: 30}, () => 1 + Math.random()*3),
+      lat: Array.from({length: 30}, () => 10 + Math.random()*10),
+    }
+  });
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMetrics(m => {
+        const next = { ...m };
+        const upd = (key, base, vari, min=0, max=100) => {
+          const last = next.spark[key][next.spark[key].length-1];
+          const v = Math.max(min, Math.min(max, last + (Math.random()-0.5)*vari));
+          next.spark = { ...next.spark, [key]: [...next.spark[key].slice(1), v] };
+          return v;
+        };
+        next.cpu  = upd('cpu', 32, 8, 5, 95);
+        next.ram  = upd('ram', 68, 4, 30, 92);
+        next.disk = upd('disk', 42, 1.5, 30, 80);
+        next.net  = upd('net', 2.1, 0.6, 0.2, 8);
+        next.lat  = upd('lat', 12, 3, 5, 60);
+        return next;
+      });
+    }, 1200);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', minHeight: 0 }}>
+      <IconRail active={view} onNavigate={setView} expanded={railExpanded} setExpanded={setRailExpanded}/>
+      <ServerList servers={SERVERS} activeId={activeServerId} onSelect={setActiveServerId} query={query} setQuery={setQuery}/>
+      {view === 'terminal' ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <TopBar
+            server={server}
+            tabs={tabs}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            addTab={addTab}
+            closeTab={closeTab}
+            metrics={metrics}
+            rightOpen={rightOpen}
+            setRightOpen={setRightOpen}
+          />
+          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <Terminal
+              server={server}
+              paused={paused}
+              setPaused={setPaused}
+              follow={follow}
+              setFollow={setFollow}
+            />
+            {rightOpen && <RightPanel server={server} metrics={metrics}/>}
+          </div>
+        </div>
+      ) : (
+        <DevicesView server={server} metrics={metrics}/>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

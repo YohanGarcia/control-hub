@@ -19,6 +19,14 @@ export interface DeviceMetric {
   cpu_percent: number
   ram_percent: number
   disk_percent: number
+  cpu_min: number | null
+  cpu_max: number | null
+  ram_min: number | null
+  ram_max: number | null
+  disk_min: number | null
+  disk_max: number | null
+  sample_count: number
+  window_seconds: number
   uptime_seconds: number
   created_at: string
 }

@@ -35,7 +35,7 @@ class Config:
     device_id: int
     agent_key: str
     heartbeat_interval: int = 15
-    metrics_interval: int = 30
+    metrics_interval: int = 1
 
 
 @dataclass
@@ -181,6 +181,40 @@ def execute_action(action: str, params: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:
             return {"status": "failed", "exit_code": 1, "output_text": "", "error_text": str(e)}
 
+    elif action in {"agent_service_status", "agent_service_start", "agent_service_stop", "agent_service_restart"}:
+        try:
+            if platform.system() == "Windows":
+                command_map = {
+                    "agent_service_status": "Get-Service -Name ControlHubAgent | Select-Object Name, Status, StartType | Format-Table -AutoSize | Out-String",
+                    "agent_service_start": "Start-Service -Name ControlHubAgent; Get-Service -Name ControlHubAgent | Select-Object Name, Status | Format-Table -AutoSize | Out-String",
+                    "agent_service_stop": "Stop-Service -Name ControlHubAgent -Force; Get-Service -Name ControlHubAgent | Select-Object Name, Status | Format-Table -AutoSize | Out-String",
+                    "agent_service_restart": "Restart-Service -Name ControlHubAgent -Force; Get-Service -Name ControlHubAgent | Select-Object Name, Status | Format-Table -AutoSize | Out-String",
+                }
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command_map[action]],
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                )
+            else:
+                command_map = {
+                    "agent_service_status": ["systemctl", "status", "controlhub-agent", "--no-pager"],
+                    "agent_service_start": ["systemctl", "start", "controlhub-agent"],
+                    "agent_service_stop": ["systemctl", "stop", "controlhub-agent"],
+                    "agent_service_restart": ["systemctl", "restart", "controlhub-agent"],
+                }
+                result = subprocess.run(command_map[action], capture_output=True, text=True, timeout=45)
+            return {
+                "status": "succeeded" if result.returncode == 0 else "failed",
+                "exit_code": result.returncode,
+                "output_text": (result.stdout or "")[:4000],
+                "error_text": (result.stderr or "")[:4000],
+            }
+        except subprocess.TimeoutExpired:
+            return {"status": "failed", "exit_code": 124, "output_text": "", "error_text": "Command timeout"}
+        except Exception as e:
+            return {"status": "failed", "exit_code": 1, "output_text": "", "error_text": str(e)}
+
     return {"status": "failed", "exit_code": 1, "output_text": "", "error_text": f"Unknown action: {action}"}
 
 
@@ -194,6 +228,7 @@ class Agent:
         self._terminal_sessions: dict[str, subprocess.Popen[str]] = {}
         self._ai_processes: dict[str, subprocess.Popen[str]] = {}
         self._ai_pty_sessions: dict[str, AiPtySession] = {}
+        self._loop_generation = 0
 
     def _sanitize_ai_chunk(self, text: str) -> str:
         if not text:
@@ -678,7 +713,6 @@ class Agent:
 
     def on_close(self, ws: websocket.WebSocketApp, code: int, reason: str) -> None:
         log.warning(f"Disconnected: code={code} reason={reason}")
-        self.running = False
 
     def on_error(self, ws: websocket.WebSocketApp, err: Exception) -> None:
         log.error(f"WebSocket error: {err}")
@@ -686,6 +720,8 @@ class Agent:
     def run_loop(self) -> None:
         ws_url = self.build_ws_url()
         log.info(f"Connecting to: {ws_url[:80]}...")
+        self._loop_generation += 1
+        loop_generation = self._loop_generation
 
         self.ws = websocket.WebSocketApp(
             ws_url,
@@ -696,12 +732,20 @@ class Agent:
         )
 
         def heartbeat_timer() -> None:
-            if self.running:
-                self.send_heartbeat()
+            if not self.running or loop_generation != self._loop_generation:
+                return
+            self.send_heartbeat()
+            hb_next = threading.Timer(self.config.heartbeat_interval, heartbeat_timer)
+            hb_next.daemon = True
+            hb_next.start()
 
         def metrics_timer() -> None:
-            if self.running:
-                self.send_metrics()
+            if not self.running or loop_generation != self._loop_generation:
+                return
+            self.send_metrics()
+            mt_next = threading.Timer(self.config.metrics_interval, metrics_timer)
+            mt_next.daemon = True
+            mt_next.start()
 
         import threading
         hb_timer = threading.Timer(self.config.heartbeat_interval, heartbeat_timer)
@@ -726,7 +770,7 @@ def main() -> None:
     parser.add_argument("--os-name", required=False, default=None, help="OS name for enrollment")
     parser.add_argument("--credentials-file", required=False, default=".agent_credentials.json", help="Local credentials file path")
     parser.add_argument("--heartbeat-interval", type=int, default=15, help="Heartbeat interval in seconds")
-    parser.add_argument("--metrics-interval", type=int, default=30, help="Metrics interval in seconds")
+    parser.add_argument("--metrics-interval", type=int, default=1, help="Metrics interval in seconds")
     args = parser.parse_args()
 
     ws_url = args.server.replace("http://", "ws://").replace("https://", "wss://")

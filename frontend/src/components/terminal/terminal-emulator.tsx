@@ -1,17 +1,42 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useCallback, startTransition } from "react"
+import { useEffect, useRef, useState, useCallback, startTransition } from "react"
 import { useWebSocketContext } from "@/components/providers/websocket-provider"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Loader2, Play, Square } from "lucide-react"
 
 interface TerminalEmulatorProps {
   deviceId: number
-  className?: string
+  hostname: string
+  onHistoryChange?: (history: string[]) => void
 }
 
-export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps) {
+function ToolBtn({
+  label, onClick, active, danger, children,
+}: { label: string; onClick: () => void; active?: boolean; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      title={label}
+      onClick={onClick}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "5px 9px", borderRadius: 7,
+        background: danger ? "rgba(239,68,68,0.10)" : active ? "rgba(139,92,246,0.12)" : "rgba(255,255,255,0.02)",
+        border: "1px solid " + (danger ? "rgba(239,68,68,0.3)" : "var(--line)"),
+        color: danger ? "var(--ch-red)" : active ? "var(--ch-violet-2)" : "var(--ch-text-2)",
+        cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+      }}
+      onMouseEnter={(e) => {
+        if (!danger && !active) (e.currentTarget as HTMLElement).style.color = "var(--ch-text)"
+      }}
+      onMouseLeave={(e) => {
+        if (!danger && !active) (e.currentTarget as HTMLElement).style.color = "var(--ch-text-2)"
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: TerminalEmulatorProps) {
   const sessionIdRef = useRef<string | null>(null)
   const outputRef = useRef<HTMLDivElement>(null)
 
@@ -22,7 +47,7 @@ export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps)
   const [history, setHistory] = useState<string[]>([])
   const [historyCursor, setHistoryCursor] = useState(-1)
   const [usageMap, setUsageMap] = useState<Record<string, number>>({})
-  const [showHistoryPanel, setShowHistoryPanel] = useState(true)
+  const [follow, setFollow] = useState(true)
 
   const { isConnected, connect, sendMessage, onMessage } = useWebSocketContext()
   const historyKey = `terminal_history_${deviceId}`
@@ -38,70 +63,46 @@ export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps)
         setHistory(Array.isArray(parsedHistory) ? parsedHistory.slice(-100) : [])
         setUsageMap(parsedUsage && typeof parsedUsage === "object" ? parsedUsage : {})
       })
-    } catch {
-    }
+    } catch {}
   }, [historyKey, usageKey])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(historyKey, JSON.stringify(history.slice(-100)))
-    } catch {
-    }
-  }, [history, historyKey])
+    try { localStorage.setItem(historyKey, JSON.stringify(history.slice(-100))) } catch {}
+    onHistoryChange?.(history)
+  }, [history, historyKey, onHistoryChange])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(usageKey, JSON.stringify(usageMap))
-    } catch {
-    }
+    try { localStorage.setItem(usageKey, JSON.stringify(usageMap)) } catch {}
   }, [usageMap, usageKey])
-
-  const suggestions = useMemo(() => {
-    const base = ["ls -la", "pwd", "cd", "whoami", "ps", "cat", "clear", "opencode"]
-    const q = input.trim().toLowerCase()
-    if (!q) {
-      return [...history]
-        .sort((a, b) => (usageMap[b] ?? 0) - (usageMap[a] ?? 0))
-        .slice(0, 6)
-    }
-    const fromHistory = history
-      .filter((h) => h.toLowerCase().startsWith(q))
-      .sort((a, b) => (usageMap[b] ?? 0) - (usageMap[a] ?? 0))
-      .slice(0, 5)
-    const fromBase = base.filter((c) => c.startsWith(q) && !fromHistory.includes(c)).slice(0, 5)
-    return [...fromHistory, ...fromBase].slice(0, 6)
-  }, [input, history, usageMap])
 
   const append = useCallback((text: string) => {
     setBuffer((prev) => `${prev}${text}`.slice(-40000))
   }, [])
 
-  const handleTerminalMessage = useCallback((msg: unknown) => {
-    const message = msg as { type: string; data?: { session_id?: string; chunk?: string; exit_code?: number } }
-
-    if (message.type === "server.terminal.started") {
-      const data = message.data as { session_id?: string }
-      if (data?.session_id) {
-        sessionIdRef.current = data.session_id
-        setSessionId(data.session_id)
+  const handleMsg = useCallback((msg: unknown) => {
+    const m = msg as { type: string; data?: Record<string, unknown> }
+    if (m.type === "server.terminal.started") {
+      const sid = m.data?.session_id as string | undefined
+      if (sid) {
+        sessionIdRef.current = sid
+        setSessionId(sid)
         setStatus("connected")
         append("[Session started]\n")
       }
       return
     }
-
-    if (message.type === "client.terminal.output") {
-      const data = message.data as { session_id?: string; chunk?: unknown }
-      if (data?.session_id === sessionIdRef.current && typeof data.chunk === "string" && data.chunk) {
-        append(data.chunk)
+    if (m.type === "client.terminal.output") {
+      const sid = m.data?.session_id as string | undefined
+      const chunk = m.data?.chunk
+      if (sid === sessionIdRef.current && typeof chunk === "string" && chunk) {
+        append(chunk)
       }
       return
     }
-
-    if (message.type === "client.terminal.exit") {
-      const data = message.data as { session_id?: string; exit_code?: number }
-      if (data?.session_id === sessionIdRef.current) {
-        append(`\n[Session ended: exit_code=${data?.exit_code ?? 0}]\n`)
+    if (m.type === "client.terminal.exit") {
+      const sid = m.data?.session_id as string | undefined
+      if (sid === sessionIdRef.current) {
+        append(`\n[Session ended: exit_code=${m.data?.exit_code ?? 0}]\n`)
         sessionIdRef.current = null
         setSessionId(null)
         setStatus("disconnected")
@@ -110,23 +111,27 @@ export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps)
     }
   }, [append])
 
-  useEffect(() => {
-    const unsubscribe = onMessage(handleTerminalMessage)
-    return unsubscribe
-  }, [onMessage, handleTerminalMessage])
+  useEffect(() => onMessage(handleMsg), [onMessage, handleMsg])
 
   useEffect(() => {
-    outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight, behavior: "smooth" })
-  }, [buffer])
+    if (!follow || !outputRef.current) return
+    outputRef.current.scrollTop = outputRef.current.scrollHeight
+  }, [buffer, follow])
 
   useEffect(() => {
     if (isConnected && !sessionId) {
-      startTransition(() => {
-        setStatus("connecting")
-      })
+      startTransition(() => setStatus("connecting"))
       sendMessage({ type: "client.terminal.start", data: { device_id: deviceId, shell: "default" } })
     }
   }, [isConnected, deviceId, sessionId, sendMessage])
+
+  const onScroll = () => {
+    const el = outputRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (!atBottom) setFollow(false)
+    if (atBottom) setFollow(true)
+  }
 
   const sendInput = () => {
     if (!sessionId || !input.trim()) return
@@ -135,17 +140,12 @@ export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps)
       setBuffer("")
       setInput("")
       setHistoryCursor(-1)
-      setUsageMap((prev) => ({ ...prev, [cmd]: (prev[cmd] ?? 0) + 1 }))
       return
     }
-    append(`PS> ${cmd}\n`)
     setHistory((prev) => [...prev.filter((p) => p !== cmd), cmd].slice(-100))
     setUsageMap((prev) => ({ ...prev, [cmd]: (prev[cmd] ?? 0) + 1 }))
     setHistoryCursor(-1)
-    sendMessage({
-      type: "client.terminal.input",
-      data: { session_id: sessionId, input: `${cmd}\n` },
-    })
+    sendMessage({ type: "client.terminal.input", data: { session_id: sessionId, input: `${cmd}\n` } })
     setInput("")
   }
 
@@ -154,123 +154,201 @@ export function TerminalEmulator({ deviceId, className }: TerminalEmulatorProps)
     sendMessage({ type: "client.terminal.stop", data: { session_id: sessionId } })
   }
 
+  const statusColor =
+    status === "connected" ? "var(--ch-green-2)"
+    : status === "connecting" ? "var(--ch-amber)"
+    : "var(--ch-text-3)"
+
+  const eventsCount = buffer.split("\n").length
+
   return (
-    <div className={`h-full flex flex-col ${className ?? ""}`}>
-      <div className="flex items-center justify-between border-b dark:border-gray-800 p-3">
-        <div className="text-sm text-muted-foreground">
-          {status === "connected" ? "Conectado" : status === "connecting" ? "Conectando..." : "Desconectado"}
-        </div>
-        <div className="flex items-center gap-2">
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* Toolbar */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 14px", borderBottom: "1px solid var(--line)",
+        background: "rgba(15,20,36,0.6)", fontSize: 12, flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="mono" style={{ color: "var(--ch-text-3)" }}>~</span>
+          <span style={{ color: "var(--ch-text-4)" }}>·</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: statusColor }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, display: "inline-block" }} />
+            {status === "connected" ? "Conectado" : status === "connecting" ? "Conectando…" : "Desconectado"}
+          </span>
+          <span style={{ color: "var(--ch-text-4)" }}>·</span>
+          <span className="mono" style={{ color: "var(--ch-text-3)" }}>{eventsCount} líneas</span>
           {!isConnected && (
-            <Button variant="outline" size="sm" onClick={() => connect()}>
-              Conectar
-            </Button>
+            <>
+              <span style={{ color: "var(--ch-text-4)" }}>·</span>
+              <button
+                onClick={() => connect()}
+                style={{ background: "none", border: "none", color: "var(--ch-blue-2)", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}
+              >
+                Conectar
+              </button>
+            </>
           )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <ToolBtn label="Copiar" onClick={() => navigator.clipboard?.writeText(buffer)}>
+            <svg viewBox="0 0 24 24" style={{ width: 12, height: 12 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+          </ToolBtn>
+          <ToolBtn label="Descargar log" onClick={() => {
+            const blob = new Blob([buffer], { type: "text/plain" })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement("a")
+            a.href = url; a.download = `terminal-${hostname}-${Date.now()}.log`; a.click()
+            URL.revokeObjectURL(url)
+          }}>
+            <svg viewBox="0 0 24 24" style={{ width: 12, height: 12 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </ToolBtn>
+          <ToolBtn label="Limpiar" onClick={() => setBuffer("")}>
+            <svg viewBox="0 0 24 24" style={{ width: 12, height: 12 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
+            </svg>
+          </ToolBtn>
           {sessionId && (
-            <Button variant="outline" size="sm" onClick={stopSession} className="gap-2">
-              <Square className="h-3 w-3" />
+            <ToolBtn label="Detener sesión" onClick={stopSession} danger>
+              <svg viewBox="0 0 24 24" style={{ width: 12, height: 12 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+              </svg>
               Detener
-            </Button>
+            </ToolBtn>
           )}
         </div>
       </div>
 
-      <div className="relative flex-1 min-h-0 bg-[#0B1120] flex">
-        {showHistoryPanel && (
-          <div className="w-64 border-r border-slate-800 p-2 overflow-y-auto">
-            <div className="text-xs text-slate-400 px-2 pb-2">Historial reciente</div>
-            {history.length === 0 ? (
-              <div className="text-xs text-slate-500 px-2">Sin comandos</div>
-            ) : (
-              [...history]
-                .reverse()
-                .slice(0, 20)
-                .map((h, idx) => (
-                  <button
-                    key={`${h}-${idx}`}
-                    type="button"
-                    onClick={() => setInput(h)}
-                    className="w-full text-left px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 rounded"
-                    title={`Usado ${usageMap[h] ?? 0} veces`}
-                  >
-                    {h}
-                  </button>
-                ))
-            )}
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div ref={outputRef} className="h-full overflow-y-auto p-4 font-mono text-sm text-slate-100 whitespace-pre-wrap">
-            {buffer || "Presiona iniciar y ejecuta comandos..."}
-          </div>
+      {/* Output */}
+      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+        <div
+          ref={outputRef}
+          onScroll={onScroll}
+          className="ch-scroll mono"
+          style={{
+            height: "100%", overflowY: "auto",
+            padding: "16px 18px 100px",
+            fontSize: 12.5, lineHeight: 1.6,
+            color: "var(--ch-text-2)",
+            whiteSpace: "pre-wrap", wordBreak: "break-all",
+          }}
+        >
+          {buffer
+            ? buffer
+            : <span style={{ color: "var(--ch-text-4)" }}>Esperando conexión…</span>
+          }
+          {status === "connected" && (
+            <span style={{ display: "inline-flex", alignItems: "baseline" }}>
+              <span style={{ color: "var(--ch-green-2)" }}>{hostname}</span>
+              <span style={{ color: "var(--ch-text-3)" }}>:</span>
+              <span style={{ color: "var(--ch-blue-2)" }}>~</span>
+              <span style={{ color: "var(--ch-text-3)", marginRight: 4 }}>$</span>
+              <span className="caret" />
+            </span>
+          )}
         </div>
-        {status === "connecting" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0B1120]/80">
-            <div className="flex items-center gap-2 text-white">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Conectando...</span>
-            </div>
-          </div>
+
+        {!follow && (
+          <button
+            onClick={() => {
+              setFollow(true)
+              if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
+            }}
+            style={{
+              position: "absolute", bottom: 100, left: "50%", transform: "translateX(-50%)",
+              padding: "6px 14px", borderRadius: 999,
+              background: "rgba(59,130,246,0.18)", border: "1px solid rgba(59,130,246,0.45)",
+              color: "var(--ch-blue-2)", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              backdropFilter: "blur(10px)",
+              boxShadow: "0 6px 20px rgba(59,130,246,0.3)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            ↓ Saltar a tiempo real
+          </button>
         )}
       </div>
 
-      <div className="border-t dark:border-gray-800 p-3 flex items-center gap-2">
-        <Button variant="outline" onClick={() => setShowHistoryPanel((v) => !v)}>
-          {showHistoryPanel ? "Ocultar historial" : "Mostrar historial"}
-        </Button>
-        <div className="relative flex-1">
-            <Input
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value)
-              setHistoryCursor(-1)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                sendInput()
-                return
-              }
-              if (e.key === "ArrowUp") {
-                e.preventDefault()
-                if (!history.length) return
-                const next = historyCursor < history.length - 1 ? historyCursor + 1 : historyCursor
-                setHistoryCursor(next)
-                setInput(history[history.length - 1 - next] ?? "")
-                return
-              }
-              if (e.key === "ArrowDown") {
-                e.preventDefault()
-                if (historyCursor <= 0) {
-                  setHistoryCursor(-1)
-                  setInput("")
-                  return
-                }
-                const next = historyCursor - 1
-                setHistoryCursor(next)
-                setInput(history[history.length - 1 - next] ?? "")
-              }
-            }}
-            placeholder="Escribe un comando..."
-            disabled={!sessionId}
-            />
-          {sessionId && suggestions.length > 0 && (
-            <div className="absolute bottom-11 left-0 right-0 rounded-md border bg-background shadow-md z-20">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setInput(s)}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
+      {/* Command input */}
+      <div style={{
+        margin: "0 18px 18px",
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "10px 12px",
+        background: "linear-gradient(180deg, rgba(20,27,49,0.92), rgba(13,18,34,0.92))",
+        border: "1px solid rgba(59,130,246,0.28)",
+        borderRadius: 12,
+        backdropFilter: "blur(12px)",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.45), 0 0 24px rgba(59,130,246,0.10), inset 0 0 16px rgba(59,130,246,0.06)",
+        flexShrink: 0,
+      }}>
+        <span className="mono" style={{ display: "inline-flex", alignItems: "baseline", fontSize: 13, flexShrink: 0 }}>
+          <span style={{ color: "var(--ch-green-2)" }}>{hostname}</span>
+          <span style={{ color: "var(--ch-text-3)" }}>:</span>
+          <span style={{ color: "var(--ch-blue-2)" }}>~</span>
+          <span style={{ color: "var(--ch-text-3)", marginRight: 4 }}>$</span>
+        </span>
+        <input
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setHistoryCursor(-1) }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { sendInput(); return }
+            if (e.key === "ArrowUp") {
+              e.preventDefault()
+              if (!history.length) return
+              const next = historyCursor < history.length - 1 ? historyCursor + 1 : historyCursor
+              setHistoryCursor(next)
+              setInput(history[history.length - 1 - next] ?? "")
+              return
+            }
+            if (e.key === "ArrowDown") {
+              e.preventDefault()
+              if (historyCursor <= 0) { setHistoryCursor(-1); setInput(""); return }
+              const next = historyCursor - 1
+              setHistoryCursor(next)
+              setInput(history[history.length - 1 - next] ?? "")
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === "l") { e.preventDefault(); setBuffer("") }
+          }}
+          placeholder="Escribe un comando… (help, status, ps, docker ps)"
+          className="mono"
+          spellCheck={false}
+          autoFocus
+          disabled={!sessionId}
+          style={{
+            flex: 1, background: "transparent", border: 0, outline: "none",
+            color: "#fff", fontSize: 13.5,
+            opacity: sessionId ? 1 : 0.55,
+          }}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--ch-text-4)", fontSize: 11, flexShrink: 0 }}>
+          {["↑", "↓"].map((k) => (
+            <kbd key={k} style={{ padding: "2px 5px", borderRadius: 4, background: "rgba(255,255,255,0.06)", border: "1px solid var(--line)", fontFamily: "inherit" }}>{k}</kbd>
+          ))}
+          <span style={{ marginLeft: 2 }}>historial</span>
         </div>
-        <Button onClick={sendInput} disabled={!sessionId || !input.trim()}>
-          <Play className="h-4 w-4" />
-        </Button>
+        <button
+          onClick={sendInput}
+          disabled={!sessionId || !input.trim()}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "7px 14px", borderRadius: 8,
+            background: sessionId && input.trim() ? "linear-gradient(180deg, #3b82f6, #2f6ed1)" : "rgba(255,255,255,0.04)",
+            color: sessionId && input.trim() ? "#fff" : "var(--ch-text-4)",
+            border: 0, fontWeight: 600, fontSize: 12.5,
+            cursor: sessionId && input.trim() ? "pointer" : "not-allowed",
+            boxShadow: sessionId && input.trim() ? "0 6px 18px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.18)" : "none",
+            fontFamily: "inherit", flexShrink: 0, transition: "all 150ms",
+          }}
+        >
+          <svg viewBox="0 0 24 24" style={{ width: 12, height: 12 }} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Ejecutar
+        </button>
       </div>
     </div>
   )

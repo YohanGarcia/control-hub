@@ -1,6 +1,10 @@
 import type { Metadata } from "next"
 import "./globals.css"
+import { Inter, JetBrains_Mono } from "next/font/google"
 import { ThemeProvider } from "@/components/providers/theme-provider"
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" })
 import { WebSocketProvider } from "@/components/providers/websocket-provider"
 import { QueryProvider } from "@/components/query-provider"
 
@@ -45,8 +49,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="es" suppressHydrationWarning>
-      <body className="min-h-screen bg-background antialiased">
+    <html lang="es" className="dark" suppressHydrationWarning>
+      <body className={`antialiased ${inter.variable} ${jetbrainsMono.variable}`}>
         <ThemeProvider>
           <WebSocketProvider>
             <QueryProvider>{children}</QueryProvider>

@@ -5,7 +5,6 @@ import { authApi, type LoginResponse } from "@/lib/api/auth"
 
 interface AuthState {
   accessToken: string | null
-  refreshToken: string | null
   isAuthenticated: boolean
   hydrated: boolean
   isLoading: boolean
@@ -24,7 +23,6 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
       hydrated: false,
       isLoading: false,
@@ -55,17 +53,13 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
-        const { refreshToken } = get()
         try {
-          if (refreshToken) {
-            await authApi.logout(refreshToken)
-          }
+          await authApi.logout()
         } catch {
         } finally {
           apiClient.clearTokens()
           set({
             accessToken: null,
-            refreshToken: null,
             isAuthenticated: false,
             error: null,
           })
@@ -73,20 +67,21 @@ export const useAuthStore = create<AuthState>()(
       },
 
       refreshSession: async () => {
-        const { refreshToken } = get()
-        if (!refreshToken) {
-          set({ isAuthenticated: false })
+        const { accessToken } = get()
+        if (accessToken) {
+          apiClient.setTokens(accessToken)
+          set({ isAuthenticated: true })
           return
         }
+
         try {
-          const response = await authApi.refresh({ refresh_token: refreshToken })
+          const response = await authApi.refresh()
           setTokens(set, response)
           set({ isAuthenticated: true })
         } catch {
           apiClient.clearTokens()
           set({
             accessToken: null,
-            refreshToken: null,
             isAuthenticated: false,
           })
         }
@@ -95,9 +90,9 @@ export const useAuthStore = create<AuthState>()(
       clearError: () => set({ error: null }),
 
       checkAuth: () => {
-        const { accessToken, refreshToken } = get()
-        if (!accessToken || !refreshToken) return false
-        apiClient.setTokens(accessToken, refreshToken)
+        const { accessToken } = get()
+        if (!accessToken) return false
+        apiClient.setTokens(accessToken)
         return true
       },
     }),
@@ -105,13 +100,12 @@ export const useAuthStore = create<AuthState>()(
       name: "auth-storage",
       partialize: (state) => ({
         accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
         passwordChangeRequired: state.passwordChangeRequired,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state?.accessToken && state?.refreshToken) {
-          apiClient.setTokens(state.accessToken, state.refreshToken)
+        if (state?.accessToken) {
+          apiClient.setTokens(state.accessToken)
         }
         if (state) {
           state.hydrated = true
@@ -122,10 +116,9 @@ export const useAuthStore = create<AuthState>()(
 )
 
 function setTokens(set: (state: Partial<AuthState>) => void, response: LoginResponse) {
-  apiClient.setTokens(response.access_token, response.refresh_token)
+  apiClient.setTokens(response.access_token)
   set({
     accessToken: response.access_token,
-    refreshToken: response.refresh_token,
     passwordChangeRequired: response.password_change_required,
     isAuthenticated: true,
   })

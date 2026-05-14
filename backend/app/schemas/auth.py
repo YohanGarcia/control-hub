@@ -8,7 +8,7 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class Setup2FARequest(BaseModel):
@@ -18,7 +18,6 @@ class Setup2FARequest(BaseModel):
 
 class TokenPairResponse(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
     password_change_required: bool

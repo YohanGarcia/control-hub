@@ -8,7 +8,6 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   access_token: string
-  refresh_token: string
   token_type: string
   expires_in: number
   password_change_required: boolean
@@ -18,10 +17,6 @@ export interface RegisterRequest {
   email: string
   password: string
   full_name?: string
-}
-
-export interface RefreshRequest {
-  refresh_token: string
 }
 
 export interface Setup2FARequest {
@@ -48,11 +43,14 @@ export const authApi = {
   register: (data: RegisterRequest) =>
     apiClient.post<{ status: string }>("/auth/register", data, { withAuth: false }),
 
-  refresh: (data: RefreshRequest) =>
-    apiClient.post<LoginResponse>("/auth/refresh", data, { withAuth: false }),
+  refresh: () =>
+    apiClient.post<LoginResponse>("/auth/refresh", {}, { withAuth: false }),
 
-  logout: (refreshToken: string) =>
-    apiClient.post<{ status: string }>("/auth/logout", { refresh_token: refreshToken }, { withAuth: false }),
+  logout: () =>
+    apiClient.post<{ status: string }>("/auth/logout", {}, { withAuth: false }),
+
+  logoutAll: () =>
+    apiClient.post<{ status: string }>("/auth/logout-all", {}, { withAuth: true }),
 
   setup2FA: (data: Setup2FARequest) =>
     apiClient.post<Setup2FAResponse>("/auth/setup-2fa", data, { withAuth: false }),

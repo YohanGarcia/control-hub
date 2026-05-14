@@ -64,6 +64,10 @@ class WsClient {
 
   private createConnection() {
     if (this.ws) {
+      this.ws.onopen = null
+      this.ws.onmessage = null
+      this.ws.onclose = null
+      this.ws.onerror = null
       this.ws.close()
     }
 

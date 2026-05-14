@@ -1,11 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Bot, Send, Square, MessageCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { useWebSocketContext } from "@/components/providers/websocket-provider"
-import { cn } from "@/lib/utils"
 
 interface AIChatProps {
   deviceId: number
@@ -13,6 +9,7 @@ interface AIChatProps {
 }
 
 interface Message {
+  id: number
   role: "user" | "assistant"
   content: string
 }
@@ -20,438 +17,502 @@ interface Message {
 type AiMode = "pty" | "oneshot"
 type AiProvider = "claude" | "opencode"
 
-export function AIChat({ deviceId, className }: AIChatProps) {
+let _msgId = 0
+const nextId = () => ++_msgId
+
+/* ── Icons ── */
+const ICON_SEND = (
+  <svg viewBox="0 0 24 24" style={{ width: 15, height: 15 }} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </svg>
+)
+const ICON_STOP = (
+  <svg viewBox="0 0 24 24" style={{ width: 13, height: 13 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+  </svg>
+)
+const ICON_BOT = (
+  <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="10" rx="2"/>
+    <path d="M12 11V7"/><circle cx="12" cy="5" r="2"/>
+    <path d="M8 15h.01M16 15h.01"/>
+  </svg>
+)
+const ICON_USER = (
+  <svg viewBox="0 0 24 24" style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+  </svg>
+)
+const ICON_GEAR = (
+  <svg viewBox="0 0 24 24" style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+  </svg>
+)
+
+/* ── Typing indicator ── */
+function TypingDots() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      {[0, 1, 2].map((i) => (
+        <span key={i} style={{
+          width: 5, height: 5, borderRadius: "50%", display: "inline-block",
+          background: "var(--ch-text-3)",
+          animation: `aiDot 1.2s ${i * 0.2}s infinite ease-in-out`,
+        }} />
+      ))}
+      <style>{`@keyframes aiDot{0%,80%,100%{transform:scale(.8);opacity:.4}40%{transform:scale(1.2);opacity:1}}`}</style>
+    </span>
+  )
+}
+
+/* ── Settings popover ── */
+function Settings({
+  mode, setMode, provider, setProvider, disabled,
+}: {
+  mode: AiMode; setMode: (v: AiMode) => void
+  provider: AiProvider; setProvider: (v: AiProvider) => void
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Configuración"
+        style={{
+          display: "grid", placeItems: "center",
+          width: 32, height: 32, borderRadius: 8,
+          background: open ? "rgba(255,255,255,0.07)" : "transparent",
+          border: "1px solid " + (open ? "var(--line-strong)" : "transparent"),
+          color: "var(--ch-text-3)", cursor: "pointer",
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--ch-text)" }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--ch-text-3)" }}
+      >
+        {ICON_GEAR}
+      </button>
+      {open && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 10 }} onClick={() => setOpen(false)} />
+          <div style={{
+            position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20,
+            width: 240,
+            background: "linear-gradient(180deg, rgba(20,27,49,0.98), rgba(13,18,34,0.98))",
+            border: "1px solid var(--line)", borderRadius: 12,
+            boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+            padding: 14,
+          }}>
+            <div style={{ fontSize: 11, color: "var(--ch-text-3)", fontWeight: 600, letterSpacing: 1, marginBottom: 12 }}>CONFIGURACIÓN</div>
+            {[
+              { label: "Modo", value: mode, options: [{ v: "pty" as AiMode, l: "PTY (interactivo)" }, { v: "oneshot" as AiMode, l: "Oneshot" }], set: setMode },
+              { label: "Proveedor", value: provider, options: [{ v: "opencode" as AiProvider, l: "opencode" }, { v: "claude" as AiProvider, l: "claude" }], set: setProvider },
+            ].map((f) => (
+              <div key={f.label} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: "var(--ch-text-4)", marginBottom: 6 }}>{f.label}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {f.options.map((o) => (
+                    <button
+                      key={o.v}
+                      onClick={() => { if (!disabled) (f.set as (v: string) => void)(o.v) }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "7px 10px", borderRadius: 8, fontSize: 12.5,
+                        background: f.value === o.v ? "rgba(139,92,246,0.14)" : "rgba(255,255,255,0.03)",
+                        border: "1px solid " + (f.value === o.v ? "rgba(139,92,246,0.4)" : "var(--line)"),
+                        color: f.value === o.v ? "var(--ch-violet-2)" : "var(--ch-text-2)",
+                        cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit",
+                        opacity: disabled ? 0.5 : 1, textAlign: "left",
+                      }}
+                    >
+                      <span style={{
+                        width: 14, height: 14, borderRadius: "50%", flexShrink: 0,
+                        border: "2px solid " + (f.value === o.v ? "var(--ch-violet-2)" : "var(--line)"),
+                        background: f.value === o.v ? "var(--ch-violet-2)" : "transparent",
+                        display: "inline-block",
+                      }} />
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ── Quick prompts ── */
+const QUICK_PROMPTS = [
+  "Diagnostica el estado del sistema",
+  "Revisa errores en los logs",
+  "Muestra el uso de memoria y CPU",
+  "Lista los procesos con más consumo",
+]
+
+export function AIChat({ deviceId }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isActive, setIsActive] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [autoEnter, setAutoEnter] = useState(true)
+
   const [mode, setMode] = useState<AiMode>(() => {
-    try {
-      if (typeof window === "undefined") return "pty"
-      const raw = localStorage.getItem(`ai_prefs_${deviceId}`)
-      if (!raw) return "pty"
-      const parsed = JSON.parse(raw) as { mode?: AiMode }
-      return parsed.mode === "oneshot" || parsed.mode === "pty" ? parsed.mode : "pty"
-    } catch {
-      return "pty"
-    }
+    try { return (JSON.parse(localStorage.getItem(`ai_prefs_${deviceId}`) ?? "{}") as { mode?: AiMode }).mode ?? "pty" } catch { return "pty" }
   })
   const [provider, setProvider] = useState<AiProvider>(() => {
-    try {
-      if (typeof window === "undefined") return "opencode"
-      const raw = localStorage.getItem(`ai_prefs_${deviceId}`)
-      if (!raw) return "opencode"
-      const parsed = JSON.parse(raw) as { provider?: AiProvider }
-      return parsed.provider === "claude" || parsed.provider === "opencode"
-        ? parsed.provider
-        : "opencode"
-    } catch {
-      return "opencode"
-    }
+    try { return (JSON.parse(localStorage.getItem(`ai_prefs_${deviceId}`) ?? "{}") as { provider?: AiProvider }).provider ?? "opencode" } catch { return "opencode" }
   })
-  const [statusText, setStatusText] = useState("Listo")
-  const [autoSendEnter, setAutoSendEnter] = useState<boolean>(() => {
-    try {
-      if (typeof window === "undefined") return true
-      const raw = localStorage.getItem(`ai_autosend_${deviceId}`)
-      return raw == null ? true : raw === "true"
-    } catch {
-      return true
-    }
-  })
-  const [customPrompt, setCustomPrompt] = useState("")
-  const [savedPrompts, setSavedPrompts] = useState<string[]>(() => {
-    try {
-      if (typeof window === "undefined") return []
-      const raw = localStorage.getItem(`ai_prompts_${deviceId}`)
-      if (!raw) return []
-      const parsed = JSON.parse(raw) as string[]
-      return Array.isArray(parsed) ? parsed.slice(0, 10) : []
-    } catch {
-      return []
-    }
-  })
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { isConnected, connect, sendMessage, onMessage } = useWebSocketContext()
 
   useEffect(() => {
-    try {
-      localStorage.setItem(`ai_prefs_${deviceId}`, JSON.stringify({ mode, provider }))
-    } catch {
-    }
+    try { localStorage.setItem(`ai_prefs_${deviceId}`, JSON.stringify({ mode, provider })) } catch {}
   }, [deviceId, mode, provider])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(`ai_autosend_${deviceId}`, String(autoSendEnter))
-    } catch {
-    }
-  }, [autoSendEnter, deviceId])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`ai_prompts_${deviceId}`, JSON.stringify(savedPrompts.slice(0, 10)))
-    } catch {
-    }
-  }, [savedPrompts, deviceId])
-
-  const handleAIMessage = useCallback((msg: unknown) => {
-    const message = msg as {
-      type: string
-      data?: { session_id?: string; chunk?: string; delta?: string; exit_code?: number }
-    }
-
-    if (message.type === "server.ai.started") {
-      const sid = message.data?.session_id
-      if (sid) {
-        setSessionId(sid)
-        setIsActive(true)
-        setIsLoading(false)
-        setStatusText(`Sesion activa (${mode.toUpperCase()} · ${provider})`)
-      }
-      return
-    }
-
-    if (message.type === "server.ai.delta") {
-      if (message.data?.session_id !== sessionId) return
-      const chunk = message.data?.chunk ?? message.data?.delta ?? ""
+  const handleMsg = useCallback((msg: unknown) => {
+    const m = msg as { type: string; data?: Record<string, unknown> }
+    if (m.type === "server.ai.started") {
+      const sid = m.data?.session_id as string | undefined
+      if (sid) { setSessionId(sid); setIsActive(true); setIsLoading(false) }
+    } else if (m.type === "server.ai.delta") {
+      if (m.data?.session_id !== sessionId) return
+      const chunk = ((m.data?.chunk ?? m.data?.delta) as string) || ""
       if (!chunk) return
       setIsLoading(false)
       setMessages((prev) => {
         const last = prev[prev.length - 1]
-        if (last && last.role === "assistant") {
-          return [...prev.slice(0, -1), { ...last, content: last.content + String(chunk) }]
-        }
-        return [...prev, { role: "assistant", content: String(chunk) }]
+        if (last?.role === "assistant") return [...prev.slice(0, -1), { ...last, content: last.content + chunk }]
+        return [...prev, { id: nextId(), role: "assistant", content: chunk }]
       })
-      return
-    }
-
-    if (message.type === "server.ai.done" || message.type === "server.ai.stopped") {
-      if (message.data?.session_id && message.data.session_id !== sessionId) return
+    } else if (m.type === "server.ai.done" || m.type === "server.ai.stopped") {
       setIsLoading(false)
-      if (mode === "oneshot") {
-        setIsActive(false)
-      }
-      setStatusText("Respuesta completada")
-      return
+      if (mode === "oneshot") setIsActive(false)
+    } else if (m.type === "server.ai.error") {
+      setIsLoading(false); setIsActive(false)
+      setMessages((prev) => [...prev, { id: nextId(), role: "assistant", content: "⚠️ Error al procesar la respuesta." }])
     }
+  }, [mode, sessionId])
 
-    if (message.type === "server.ai.error") {
-      if (message.data?.session_id && message.data.session_id !== sessionId) return
-      setIsLoading(false)
-      setIsActive(false)
-      setStatusText("Error en la sesion")
-    }
-  }, [mode, provider, sessionId])
+  useEffect(() => onMessage(handleMsg), [onMessage, handleMsg])
 
   useEffect(() => {
-    const unsubscribe = onMessage(handleAIMessage)
-    return unsubscribe
-  }, [onMessage, handleAIMessage])
+    if (!scrollRef.current) return
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [messages, isLoading])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto" })
-  }, [messages])
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.style.height = "auto"
+    ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`
+  }, [input])
 
   const startChat = () => {
-    if (!isConnected) {
-      connect()
-      return
-    }
-    sendMessage({
-      type: "client.ai.start",
-      data: { device_id: deviceId, provider, mode },
-    })
+    if (!isConnected) { connect(); return }
+    sendMessage({ type: "client.ai.start", data: { device_id: deviceId, provider, mode } })
     setMessages([])
     setIsLoading(true)
-    setStatusText("Iniciando sesion AI...")
   }
 
   const stopChat = () => {
     if (!sessionId) return
     sendMessage({ type: "client.ai.stop", data: { session_id: sessionId } })
-    setIsActive(false)
-    setIsLoading(false)
-    setSessionId(null)
-    setStatusText("Sesion detenida")
+    setIsActive(false); setIsLoading(false); setSessionId(null)
   }
 
-  const sendMessageText = () => {
-    if (!input.trim() || !isActive || !sessionId) return
-    setMessages((prev) => [...prev, { role: "user", content: input }])
-    sendMessage({ type: "client.ai.message", data: { session_id: sessionId, text: input } })
+  const sendMsg = (text?: string) => {
+    const content = (text ?? input).trim()
+    if (!content || !isActive || !sessionId) return
+    setMessages((prev) => [...prev, { id: nextId(), role: "user", content }])
+    sendMessage({ type: "client.ai.message", data: { session_id: sessionId, text: content } })
     setInput("")
-    if (mode === "oneshot") {
-      setIsLoading(true)
-    }
-    setStatusText("Procesando...")
+    if (mode === "oneshot") setIsLoading(true)
   }
 
-  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Escape" && isActive) {
-      e.preventDefault()
-      stopChat()
-      return
-    }
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault()
-      sendMessageText()
-      return
-    }
-    if (e.key === "Enter" && !e.shiftKey && autoSendEnter) {
-      e.preventDefault()
-      sendMessageText()
-      return
-    }
-    if (e.altKey && e.key === "ArrowUp") {
-      e.preventDefault()
-      if (savedPrompts.length > 0) {
-        setInput(savedPrompts[0])
-      }
-    }
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape" && isActive) { e.preventDefault(); stopChat(); return }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMsg(); return }
+    if (e.key === "Enter" && !e.shiftKey && autoEnter) { e.preventDefault(); sendMsg() }
   }
 
-  const savePrompt = () => {
-    const p = customPrompt.trim()
-    if (!p) return
-    setSavedPrompts((prev) => [p, ...prev.filter((x) => x !== p)].slice(0, 10))
-    setCustomPrompt("")
-  }
-
-  const removePrompt = (prompt: string) => {
-    setSavedPrompts((prev) => prev.filter((p) => p !== prompt))
-  }
-
-  const movePrompt = (index: number, dir: -1 | 1) => {
-    setSavedPrompts((prev) => {
-      const next = [...prev]
-      const to = index + dir
-      if (to < 0 || to >= next.length) return prev
-      const tmp = next[index]
-      next[index] = next[to]
-      next[to] = tmp
-      return next
-    })
-  }
+  const isEmpty = messages.length === 0 && !isLoading
 
   return (
-    <div className={cn("flex flex-col h-full bg-white dark:bg-[#0B1120]", className)}>
-      <div className="flex-1 overflow-y-auto space-y-4 p-4">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-            <div className="rounded-full bg-blue-500/10 p-4 mb-4">
-              <MessageCircle className="h-12 w-12 text-blue-500" />
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "rgba(7,10,20,0.88)" }}>
+
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 16px", borderBottom: "1px solid var(--line)",
+        background: "rgba(15,20,36,0.7)", flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 9,
+            background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(59,130,246,0.2))",
+            border: "1px solid rgba(139,92,246,0.35)",
+            display: "grid", placeItems: "center", color: "var(--ch-violet-2)",
+          }}>
+            {ICON_BOT}
+          </div>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", lineHeight: 1.1 }}>AI Assistant</div>
+            <div style={{ fontSize: 11, color: "var(--ch-text-3)", display: "flex", alignItems: "center", gap: 5, marginTop: 1 }}>
+              {isActive
+                ? <><span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ch-green)", display: "inline-block", boxShadow: "0 0 4px var(--ch-green)" }} /> Sesión activa</>
+                : "Inactivo"
+              }
+              <span style={{ color: "var(--ch-text-4)" }}>·</span>
+              <span>{mode}</span>
+              <span style={{ color: "var(--ch-text-4)" }}>·</span>
+              <span>{provider}</span>
             </div>
-            <p className="text-lg font-medium">AI Assistant</p>
-            <p className="text-sm mt-2 max-w-md">
-              Asistente de IA para troubleshooting y asistencia en el dispositivo #{deviceId}
-            </p>
-            <Button
-              onClick={startChat}
-              disabled={!isConnected}
-              className="mt-4 gap-2"
-              size="lg"
-            >
-              <Bot className="h-4 w-4" />
-              Iniciar Chat AI
-            </Button>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setAutoEnter(v => !v)}
+            title="Auto-envío con Enter"
+            style={{
+              padding: "4px 10px", borderRadius: 7, fontSize: 11, fontFamily: "inherit", cursor: "pointer",
+              background: autoEnter ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.04)",
+              border: "1px solid " + (autoEnter ? "rgba(59,130,246,0.35)" : "var(--line)"),
+              color: autoEnter ? "var(--ch-blue-2)" : "var(--ch-text-3)",
+            }}
+          >
+            Enter {autoEnter ? "ON" : "OFF"}
+          </button>
+          {isActive && (
+            <button onClick={stopChat} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 7,
+              background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)",
+              color: "var(--ch-red)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            }}>
+              {ICON_STOP} Detener
+            </button>
+          )}
+          <Settings mode={mode} setMode={setMode} provider={provider} setProvider={setProvider} disabled={isActive} />
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div ref={scrollRef} className="ch-scroll" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        {isEmpty ? (
+          /* Empty state */
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", gap: 24 }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 20,
+              background: "linear-gradient(135deg, rgba(139,92,246,0.25), rgba(59,130,246,0.15))",
+              border: "1px solid rgba(139,92,246,0.3)",
+              display: "grid", placeItems: "center",
+              boxShadow: "0 0 40px rgba(139,92,246,0.15)",
+            }}>
+              <svg viewBox="0 0 24 24" style={{ width: 32, height: 32, color: "var(--ch-violet-2)" }} fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/>
+                <path d="M12 11V7"/><circle cx="12" cy="5" r="2"/>
+                <path d="M8 15h.01M16 15h.01"/>
+              </svg>
+            </div>
+
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 8 }}>AI Assistant</div>
+              <div style={{ fontSize: 13.5, color: "var(--ch-text-3)", lineHeight: 1.6, maxWidth: 340 }}>
+                Asistente inteligente para troubleshooting, diagnóstico y gestión del dispositivo.
+              </div>
+            </div>
+
+            {/* Quick prompts grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, width: "100%", maxWidth: 440 }}>
+              {QUICK_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { if (isActive) { sendMsg(p) } else { setInput(p) } }}
+                  style={{
+                    padding: "11px 14px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.4,
+                    background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)",
+                    color: "var(--ch-text-2)", cursor: "pointer", fontFamily: "inherit",
+                    textAlign: "left", transition: "all 150ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(139,92,246,0.10)"
+                    e.currentTarget.style.borderColor = "rgba(139,92,246,0.35)"
+                    e.currentTarget.style.color = "#fff"
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.03)"
+                    e.currentTarget.style.borderColor = "var(--line)"
+                    e.currentTarget.style.color = "var(--ch-text-2)"
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
             {!isConnected && (
-              <div className="mt-2 flex items-center gap-2">
-                <p className="text-xs text-red-500">Conecta al dispositivo primero</p>
-                <Button size="sm" variant="outline" onClick={() => connect()}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 10, background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.22)", fontSize: 12.5, color: "var(--ch-red)" }}>
+                WebSocket desconectado
+                <button onClick={() => connect()} style={{ background: "none", border: "none", color: "var(--ch-blue-2)", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", textDecoration: "underline" }}>
                   Conectar
-                </Button>
+                </button>
               </div>
             )}
           </div>
         ) : (
-          <>
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "flex",
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                )}
-              >
-                <div
-                  className={cn(
-                    "max-w-[80%] p-3 rounded-2xl text-sm whitespace-pre-wrap",
-                    msg.role === "user"
-                      ? "bg-blue-600 text-white rounded-br-md"
-                      : "bg-gray-100 dark:bg-gray-800 rounded-bl-md"
-                  )}
-                >
+          /* Message list */
+          <div style={{ padding: "24px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
+            {messages.map((msg) => (
+              <div key={msg.id} style={{ display: "flex", gap: 12, flexDirection: msg.role === "user" ? "row-reverse" : "row", alignItems: "flex-start" }}>
+                {/* Avatar */}
+                <div style={{
+                  width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                  display: "grid", placeItems: "center",
+                  background: msg.role === "assistant"
+                    ? "linear-gradient(135deg, rgba(139,92,246,0.25), rgba(59,130,246,0.15))"
+                    : "linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.15))",
+                  border: "1px solid " + (msg.role === "assistant" ? "rgba(139,92,246,0.3)" : "rgba(59,130,246,0.3)"),
+                  color: msg.role === "assistant" ? "var(--ch-violet-2)" : "var(--ch-blue-2)",
+                }}>
+                  {msg.role === "assistant" ? ICON_BOT : ICON_USER}
+                </div>
+
+                {/* Bubble */}
+                <div style={{
+                  maxWidth: "82%",
+                  padding: "11px 16px",
+                  borderRadius: msg.role === "user" ? "14px 4px 14px 14px" : "4px 14px 14px 14px",
+                  fontSize: 13.5, lineHeight: 1.65, whiteSpace: "pre-wrap",
+                  background: msg.role === "user"
+                    ? "linear-gradient(180deg, rgba(59,130,246,0.22), rgba(59,130,246,0.12))"
+                    : "rgba(255,255,255,0.04)",
+                  border: "1px solid " + (msg.role === "user" ? "rgba(59,130,246,0.38)" : "rgba(255,255,255,0.07)"),
+                  color: "#e8eaf0",
+                }}>
                   {msg.content}
                 </div>
               </div>
             ))}
+
+            {/* Typing indicator */}
             {isLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded-2xl rounded-bl-md">
-                  <div className="flex gap-1">
-                    <span className="animate-bounce text-lg">.</span>
-                    <span className="animate-bounce delay-75 text-lg">.</span>
-                    <span className="animate-bounce delay-150 text-lg">.</span>
-                  </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                  display: "grid", placeItems: "center",
+                  background: "linear-gradient(135deg, rgba(139,92,246,0.25), rgba(59,130,246,0.15))",
+                  border: "1px solid rgba(139,92,246,0.3)",
+                  color: "var(--ch-violet-2)",
+                }}>
+                  {ICON_BOT}
+                </div>
+                <div style={{
+                  padding: "12px 16px", borderRadius: "4px 14px 14px 14px",
+                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
+                }}>
+                  <TypingDots />
                 </div>
               </div>
             )}
-            <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
       </div>
 
-      <div className="border-t dark:border-gray-800 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">{statusText}</div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="rounded-full border px-2 py-0.5">{mode.toUpperCase()}</span>
-            <span className="rounded-full border px-2 py-0.5">{provider}</span>
-            {sessionId && <span className="rounded-full border px-2 py-0.5">sid:{sessionId.slice(0, 8)}</span>}
-          </div>
-        </div>
-        <div className="mb-3 flex items-center justify-between rounded-md border px-3 py-2">
-          <span className="text-xs text-muted-foreground">Auto-send con Enter</span>
-          <button
-            type="button"
-            onClick={() => setAutoSendEnter((v) => !v)}
-            className={`text-xs rounded px-2 py-1 border ${autoSendEnter ? "bg-primary text-primary-foreground" : ""}`}
-          >
-            {autoSendEnter ? "ON" : "OFF"}
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-          <label className="text-xs text-muted-foreground">
-            Modo
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as AiMode)}
-              className="mt-1 w-full rounded-md border bg-background px-2 py-1 text-sm"
-              disabled={isActive}
-            >
-              <option value="pty">PTY</option>
-              <option value="oneshot">Oneshot</option>
-            </select>
-          </label>
-          <label className="text-xs text-muted-foreground">
-            Proveedor
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as AiProvider)}
-              className="mt-1 w-full rounded-md border bg-background px-2 py-1 text-sm"
-              disabled={isActive}
-            >
-              <option value="opencode">opencode</option>
-              <option value="claude">claude</option>
-            </select>
-          </label>
-        </div>
-        {!isActive && messages.length === 0 && (
-          <div className="mb-3 space-y-2">
-            <div className="flex gap-2">
-              <input
-                value={customPrompt}
-                onChange={(e) => setCustomPrompt(e.target.value)}
-                placeholder="Guardar prompt personalizado..."
-                className="flex-1 rounded-md border bg-background px-2 py-1 text-sm"
-              />
-              <Button type="button" variant="outline" size="sm" onClick={savePrompt}>
-                Guardar
-              </Button>
-            </div>
-            {savedPrompts.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {savedPrompts.map((p, idx) => (
-                  <div key={`${p}-${idx}`} className="inline-flex items-center gap-1 rounded-full border px-2 py-1">
-                    <button
-                      type="button"
-                      onClick={() => setInput(p)}
-                      className="text-xs hover:underline"
-                      title={p}
-                    >
-                      {p.length > 36 ? `${p.slice(0, 36)}...` : p}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] px-1 rounded hover:bg-muted"
-                      onClick={() => movePrompt(idx, -1)}
-                      title="Mover arriba"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] px-1 rounded hover:bg-muted"
-                      onClick={() => movePrompt(idx, 1)}
-                      title="Mover abajo"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] px-1 rounded text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
-                      onClick={() => removePrompt(p)}
-                      title="Eliminar"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setInput("Diagnostica el estado del sistema y sugiere los primeros comandos")}
-            >
-              Prompt diagnostico
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setInput("Revisa errores recientes y dame pasos de correccion")}
-            >
-              Prompt errores
-            </Button>
-            </div>
-          </div>
-        )}
-        <div className="flex gap-2">
-          {!isActive ? (
-            <Button onClick={startChat} disabled={!isConnected} className="gap-2">
-              <Bot className="h-4 w-4" />
-              Iniciar Chat AI
-            </Button>
-          ) : (
-            <Button variant="destructive" onClick={stopChat} className="gap-2">
-              <Square className="h-4 w-4" />
-              Detener
-            </Button>
-          )}
-        </div>
-
-        {isActive && (
-          <div className="flex gap-2 mt-3">
-            <Textarea
+      {/* Input area */}
+      <div style={{
+        borderTop: "1px solid var(--line)",
+        background: "rgba(10,14,26,0.8)",
+        padding: "12px 16px 16px",
+        flexShrink: 0,
+      }}>
+        {isActive ? (
+          <div style={{
+            display: "flex", gap: 10, alignItems: "flex-end",
+            background: "linear-gradient(180deg, rgba(20,27,49,0.95), rgba(13,18,34,0.95))",
+            border: "1px solid rgba(139,92,246,0.25)",
+            borderRadius: 14,
+            padding: "10px 12px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4), inset 0 0 20px rgba(139,92,246,0.05)",
+          }}>
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onComposerKeyDown}
-              placeholder="Escribe tu mensaje... (Enter/Ctrl+Enter enviar, Shift+Enter nueva línea, Esc detener)"
-              className="flex-1 min-h-[44px] max-h-[120px] resize-none"
+              onKeyDown={onKey}
+              placeholder={autoEnter ? "Escribe tu mensaje… (Enter para enviar, Shift+Enter nueva línea)" : "Escribe tu mensaje… (Ctrl+Enter para enviar)"}
               rows={1}
+              style={{
+                flex: 1, background: "transparent", border: 0, outline: "none",
+                color: "#fff", fontSize: 13.5, lineHeight: 1.55,
+                resize: "none", fontFamily: "inherit",
+                minHeight: 22, maxHeight: 140,
+              }}
             />
-            <Button onClick={sendMessageText} disabled={!input.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
+            <button
+              onClick={() => sendMsg()}
+              disabled={!input.trim()}
+              style={{
+                width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                display: "grid", placeItems: "center",
+                background: input.trim()
+                  ? "linear-gradient(180deg, rgba(139,92,246,0.9), rgba(109,62,216,0.9))"
+                  : "rgba(255,255,255,0.05)",
+                border: "1px solid " + (input.trim() ? "rgba(139,92,246,0.5)" : "var(--line)"),
+                color: input.trim() ? "#fff" : "var(--ch-text-4)",
+                cursor: input.trim() ? "pointer" : "not-allowed",
+                boxShadow: input.trim() ? "0 4px 14px rgba(139,92,246,0.4)" : "none",
+                transition: "all 150ms",
+              }}
+            >
+              {ICON_SEND}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {input && (
+              <div style={{
+                flex: 1,
+                display: "flex", alignItems: "center", gap: 10,
+                background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)",
+                borderRadius: 10, padding: "8px 12px",
+              }}>
+                <span style={{ flex: 1, fontSize: 13, color: "var(--ch-text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{input}</span>
+                <button onClick={() => setInput("")} style={{ background: "none", border: "none", color: "var(--ch-text-4)", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+              </div>
+            )}
+            <button
+              onClick={startChat}
+              disabled={!isConnected}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 9,
+                padding: "10px 20px", borderRadius: 12, fontSize: 13.5, fontWeight: 600,
+                background: isConnected
+                  ? "linear-gradient(180deg, rgba(139,92,246,0.85), rgba(109,62,216,0.85))"
+                  : "rgba(255,255,255,0.06)",
+                border: "1px solid " + (isConnected ? "rgba(139,92,246,0.5)" : "var(--line)"),
+                color: isConnected ? "#fff" : "var(--ch-text-4)",
+                cursor: isConnected ? "pointer" : "not-allowed",
+                boxShadow: isConnected ? "0 6px 20px rgba(139,92,246,0.35), inset 0 1px 0 rgba(255,255,255,0.15)" : "none",
+                fontFamily: "inherit", whiteSpace: "nowrap",
+              }}
+            >
+              {ICON_BOT}
+              {input ? "Iniciar con este prompt" : "Iniciar AI"}
+            </button>
           </div>
         )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6, fontSize: 11, color: "var(--ch-text-4)" }}>
+          {isActive
+            ? <>{autoEnter ? "Enter · enviar" : "Ctrl+Enter · enviar"} &nbsp;·&nbsp; Shift+Enter · nueva línea &nbsp;·&nbsp; Esc · detener</>
+            : <>{isConnected ? "WebSocket conectado" : "WebSocket desconectado · haz clic en Conectar"}</>
+          }
+        </div>
       </div>
     </div>
   )

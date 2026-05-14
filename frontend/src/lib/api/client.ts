@@ -1,4 +1,12 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"
+function resolveApiBaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_API_URL
+  if (!raw || raw.includes("<") || raw.includes(">")) {
+    return "http://localhost:8000/api/v1"
+  }
+  return raw
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
 
 interface ApiClientOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
@@ -10,20 +18,18 @@ interface ApiClientOptions {
 class ApiClient {
   private baseUrl: string
   private accessToken: string | null = null
-  private refreshToken: string | null = null
+  private refreshPromise: Promise<boolean> | null = null
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl
   }
 
-  setTokens(accessToken: string | null, refreshToken: string | null) {
+  setTokens(accessToken: string | null) {
     this.accessToken = accessToken
-    this.refreshToken = refreshToken
   }
 
   clearTokens() {
     this.accessToken = null
-    this.refreshToken = null
   }
 
   getAccessToken(): string | null {
@@ -49,7 +55,7 @@ class ApiClient {
       credentials: "include",
     })
 
-    if (response.status === 401 && withAuth && this.refreshToken) {
+    if (response.status === 401 && withAuth) {
       const refreshed = await this.tryRefreshToken()
       if (refreshed) {
         requestHeaders["Authorization"] = `Bearer ${this.accessToken}`
@@ -79,22 +85,38 @@ class ApiClient {
   }
 
   private async tryRefreshToken(): Promise<boolean> {
+    if (this.refreshPromise) {
+      return this.refreshPromise
+    }
+
+    this.refreshPromise = this.refreshWithCookie()
+    try {
+      return await this.refreshPromise
+    } finally {
+      this.refreshPromise = null
+    }
+  }
+
+  private async refreshWithCookie(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: this.refreshToken }),
+        body: JSON.stringify({}),
         credentials: "include",
       })
 
       if (response.ok) {
         const data = await response.json()
         this.accessToken = data.access_token
-        this.refreshToken = data.refresh_token
         return true
       }
     } catch {
-      this.clearTokens()
+      return false
+    }
+    this.clearTokens()
+    if (typeof window !== "undefined") {
+      window.location.href = "/login"
     }
     return false
   }
@@ -120,8 +142,13 @@ class ApiClient {
   }
 
   getWsUrl(): string {
-    const wsBase = this.baseUrl.replace(/^http/, "ws")
-    return wsBase
+    try {
+      const parsed = new URL(this.baseUrl)
+      parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:"
+      return parsed.toString().replace(/\/$/, "")
+    } catch {
+      return "ws://localhost:8000/api/v1"
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
 
+/* ── Design tokens (active in dark mode, which is always on) ── */
 :root {
   --background: #f3f6fc;
   --foreground: #0d1b33;
@@ -16,24 +17,177 @@
 }
 
 .dark {
-  --background: #050816;
-  --foreground: #f8fafc;
-  --card: #0b1120;
-  --card-foreground: #f8fafc;
+  --background: #0a0e1a;
+  --foreground: #e6ebf5;
+  --card: #0f1424;
+  --card-foreground: #e6ebf5;
   --primary: #3b82f6;
   --primary-foreground: #ffffff;
-  --muted: #101827;
-  --muted-foreground: #94a3b8;
+  --muted: #131a2e;
+  --muted-foreground: #aab3c8;
   --accent: #3b82f6;
-  --border: rgba(255, 255, 255, 0.1);
+  --border: #1f2940;
   --ring: #3b82f6;
+
+  /* Design palette — matches Terminal.html exactly */
+  --bg-0: rgba(7, 9, 19, 0.13);
+  --bg-1: #0a0e1a;
+  --bg-2: #0f1424;
+  --bg-3: #131a2e;
+  --bg-4: #1a2238;
+  --line: #1f2940;
+  --line-strong: #2a3654;
+  --text: #e6ebf5;
+  --text-2: #aab3c8;
+  --text-3: #6b7591;
+  --text-4: #4a5475;
+  --blue: #3b82f6;
+  --blue-2: #60a5fa;
+  --violet: #8b5cf6;
+  --violet-2: #a78bfa;
+  --green: #22c55e;
+  --green-2: #4ade80;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --pink: #ec4899;
+  --cyan: #06b6d4;
+
+  /* Also keep ch- aliases for backwards compat with existing components */
+  --ch-blue: #3b82f6;
+  --ch-blue-2: #60a5fa;
+  --ch-violet: #8b5cf6;
+  --ch-violet-2: #a78bfa;
+  --ch-green: #22c55e;
+  --ch-green-2: #4ade80;
+  --ch-amber: #f59e0b;
+  --ch-red: #ef4444;
+  --ch-pink: #ec4899;
+  --ch-cyan: #06b6d4;
+  --ch-text: #e6ebf5;
+  --ch-text-2: #aab3c8;
+  --ch-text-3: #6b7591;
+  --ch-text-4: #4a5475;
 }
 
-* {
-  border-color: var(--border);
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.dark body {
+  background:
+    radial-gradient(900px 700px at 12% 8%, rgba(59, 130, 246, 0.14), transparent 55%),
+    radial-gradient(900px 700px at 88% 95%, rgba(139, 92, 246, 0.14), transparent 55%),
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+    var(--bg-1);
+  background-size: auto, auto, 56px 56px, 56px 56px, auto;
+  color: var(--text);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
+  font-family: var(--font-inter, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+* { border-color: var(--border); }
+
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+
+.mono {
+  font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, Menlo, monospace);
+}
+
+/* ── Animations ── */
+@keyframes caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+}
+
+@keyframes lineIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes flow {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes drift {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -200; }
+}
+
+.caret {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: var(--green);
+  vertical-align: -3px;
+  margin-left: 2px;
+  animation: caret 1s steps(2, end) infinite;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+  border-radius: 1px;
+}
+
+.pulse {
+  animation: pulse-dot 2s infinite;
+}
+
+.line-in {
+  animation: lineIn 240ms ease-out both;
+}
+
+/* ── Custom scrollbar (matches .scroll in design) ── */
+.ch-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.ch-scroll::-webkit-scrollbar-thumb {
+  background: #1c2542;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ch-scroll::-webkit-scrollbar-thumb:hover {
+  background: #283357;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.ch-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Glass panel ── */
+.glass {
+  background: linear-gradient(180deg, rgba(20, 27, 49, 0.72), rgba(13, 18, 34, 0.72));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--line);
+}
+
+/* ── Focus ring ── */
+.ring-blue:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: #fff;
 }

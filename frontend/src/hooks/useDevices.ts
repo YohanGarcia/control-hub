@@ -33,6 +33,7 @@ export function useDeviceMetrics(id: number, params?: { offset?: number; limit?:
     queryKey: ["devices", id, "metrics", params],
     queryFn: () => devicesApi.getMetrics(id, params),
     enabled: !!id,
+    refetchInterval: 15000,
   })
 }
 
