@@ -48,8 +48,9 @@ switch ($Command) {
     }
 
     $payload = @{ device_id = $DeviceId; agent_key = $AgentKey } | ConvertTo-Json -Compress
-    Set-Content -LiteralPath $CredsFile -Value $payload -Encoding UTF8
-    Set-Content -LiteralPath $ServerFile -Value $Server -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($CredsFile, $payload, $utf8NoBom)
+    [System.IO.File]::WriteAllText($ServerFile, $Server, $utf8NoBom)
     "Credentials saved: $CredsFile"
     "Server configured: $Server"
   }

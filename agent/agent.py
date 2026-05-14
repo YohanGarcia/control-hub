@@ -737,7 +737,7 @@ def main() -> None:
 
     credentials_path = args.credentials_file
     if (not device_id or not agent_key) and os.path.exists(credentials_path):
-        with open(credentials_path, "r", encoding="utf-8") as f:
+        with open(credentials_path, "r", encoding="utf-8-sig") as f:
             saved = json.load(f)
         device_id = int(saved.get("device_id"))
         agent_key = str(saved.get("agent_key"))
