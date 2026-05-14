@@ -1328,9 +1328,39 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
   const { data: deviceStatus, refetch: refetchStatus } = useDeviceStatus(deviceId)
   const { data: metrics, refetch: refetchMetrics } = useDeviceMetrics(deviceId, { from_ts: fromTs, limit: Math.min(500, rangeMinutes * 12) })
   const { connect, onMessage } = useWebSocket()
-  const [liveMetric, setLiveMetric] = useState<{ cpu_percent: number; ram_percent: number; disk_percent: number; uptime_seconds: number; created_at: string } | null>(null)
-  const [liveMetrics, setLiveMetrics] = useState<Array<{ cpu_percent: number; ram_percent: number; disk_percent: number; uptime_seconds: number; created_at: string }>>([])
+  const [liveMetric, setLiveMetric] = useState<MetricSample | null>(null)
+  const [liveMetrics, setLiveMetrics] = useState<MetricSample[]>([])
   const [liveOnline, setLiveOnline] = useState<boolean | null>(null)
+
+  const normalizeMetricSample = (metric: {
+    cpu_percent: number
+    ram_percent: number
+    disk_percent: number
+    uptime_seconds: number
+    created_at: string
+    cpu_min?: number | null
+    cpu_max?: number | null
+    ram_min?: number | null
+    ram_max?: number | null
+    disk_min?: number | null
+    disk_max?: number | null
+    sample_count?: number
+    window_seconds?: number
+  }): MetricSample => ({
+    cpu_percent: metric.cpu_percent,
+    ram_percent: metric.ram_percent,
+    disk_percent: metric.disk_percent,
+    uptime_seconds: metric.uptime_seconds,
+    created_at: metric.created_at,
+    cpu_min: metric.cpu_min ?? null,
+    cpu_max: metric.cpu_max ?? null,
+    ram_min: metric.ram_min ?? null,
+    ram_max: metric.ram_max ?? null,
+    disk_min: metric.disk_min ?? null,
+    disk_max: metric.disk_max ?? null,
+    sample_count: metric.sample_count ?? 1,
+    window_seconds: metric.window_seconds ?? 1,
+  })
 
   useEffect(() => {
     connect()
@@ -1342,13 +1372,22 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
       if (targetDeviceId !== deviceId) return
 
       if (message.type === "client.device.metric.updated") {
-        const metric = message.metric as {
+        const rawMetric = message.metric as {
           cpu_percent: number
           ram_percent: number
           disk_percent: number
           uptime_seconds: number
           created_at: string
+          cpu_min?: number | null
+          cpu_max?: number | null
+          ram_min?: number | null
+          ram_max?: number | null
+          disk_min?: number | null
+          disk_max?: number | null
+          sample_count?: number
+          window_seconds?: number
         }
+        const metric = normalizeMetricSample(rawMetric)
 
         setLiveMetric(metric)
         setLiveMetrics((prev) => [...prev, metric].slice(-30))
@@ -1363,7 +1402,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     if (deviceStatus?.latest_metric) {
-      setLiveMetric(deviceStatus.latest_metric)
+      setLiveMetric(normalizeMetricSample(deviceStatus.latest_metric))
     }
   }, [deviceStatus?.latest_metric])
 
@@ -1374,7 +1413,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
   }, [device?.is_online])
 
   const latestMetric = liveMetric ?? deviceStatus?.latest_metric ?? null
-  const mergedMetrics = useMemo(() => {
+  const mergedMetrics: MetricSample[] = useMemo(() => {
     const seen = new Set<string>()
     const all = [...(metrics ?? []), ...liveMetrics].filter((m) => {
       if (seen.has(m.created_at)) return false
