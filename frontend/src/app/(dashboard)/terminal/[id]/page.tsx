@@ -42,6 +42,7 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
   const { connect, onMessage } = useWebSocket()
 
   const [rightOpen, setRightOpen] = useState(true)
+  const [closingSheet, setClosingSheet] = useState(false)
   const [cmdHistory, setCmdHistory] = useState<string[]>([])
   const [elapsed, setElapsed] = useState(0)
   const [liveMetric, setLiveMetric] = useState<{ cpu_percent: number; ram_percent: number; disk_percent: number } | null>(null)
@@ -59,6 +60,12 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
 
   // Connect WebSocket
   useEffect(() => { connect() }, [connect])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 1200) {
+      setRightOpen(false)
+    }
+  }, [])
 
   // Listen for live metric updates
   useEffect(() => {
@@ -89,18 +96,26 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
 
   const handleHistoryChange = useCallback((h: string[]) => setCmdHistory(h), [])
 
+  function closePanel() {
+    setClosingSheet(true)
+    window.setTimeout(() => {
+      setRightOpen(false)
+      setClosingSheet(false)
+    }, 180)
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="terminal-page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Top bar */}
-      <div style={{
+      <div className="terminal-topbar" style={{
         borderBottom: "1px solid var(--line)",
         background: "rgba(10,14,26,0.6)",
         backdropFilter: "blur(14px)",
         flexShrink: 0,
       }}>
         {/* Breadcrumb + mini-metrics row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div className="terminal-top-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px 0" }}>
+          <div className="terminal-breadcrumb" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <span
               style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--ch-text-3)", fontSize: 13, cursor: "pointer" }}
               onClick={() => history.back()}
@@ -117,9 +132,9 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="terminal-mini-metrics" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {/* CPU mini */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)" }}>
+            <div className="terminal-mini-card" style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)" }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: 9, color: "var(--ch-text-3)", letterSpacing: 1.2, fontWeight: 600 }}>CPU</span>
                 <span className="mono" style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{latestMetric ? `${latestMetric.cpu_percent.toFixed(0)}%` : "—"}</span>
@@ -127,7 +142,7 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
               <Sparkline data={sparkCpu.length >= 2 ? sparkCpu : [0, 0]} color="var(--ch-blue)" width={64} height={20} />
             </div>
             {/* RAM mini */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)" }}>
+            <div className="terminal-mini-card" style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)" }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: 9, color: "var(--ch-text-3)", letterSpacing: 1.2, fontWeight: 600 }}>RAM</span>
                 <span className="mono" style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{latestMetric ? `${latestMetric.ram_percent.toFixed(0)}%` : "—"}</span>
@@ -135,23 +150,10 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
               <Sparkline data={sparkRam.length >= 2 ? sparkRam : [0, 0]} color="var(--ch-green)" width={64} height={20} />
             </div>
 
-            <div style={{ width: 1, height: 26, background: "var(--line)", margin: "0 4px" }} />
-
-            {/* Connection pill */}
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px",
-              borderRadius: 999,
-              background: device?.is_online ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
-              border: device?.is_online ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(239,68,68,0.3)",
-              color: device?.is_online ? "var(--ch-green-2)" : "var(--ch-red)",
-              fontSize: 12, fontWeight: 600,
-            }}>
-              <StatusDot online={device?.is_online ?? false} />
-              {device?.is_online ? "Conectado" : "Desconectado"}
-            </div>
+            <div className="terminal-mini-divider" style={{ width: 1, height: 26, background: "var(--line)", margin: "0 4px" }} />
 
             {/* Panel toggle */}
-            <button onClick={() => setRightOpen(v => !v)} style={{
+            <button className="terminal-panel-toggle" onClick={() => (rightOpen ? closePanel() : setRightOpen(true))} style={{
               display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8,
               border: "1px solid var(--line)",
               background: rightOpen ? "rgba(139,92,246,0.12)" : "rgba(255,255,255,0.02)",
@@ -164,7 +166,7 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
         </div>
 
         {/* Session tab row */}
-        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px 0", gap: 4 }}>
+        <div className="terminal-session-row" style={{ display: "flex", alignItems: "center", padding: "10px 14px 0", gap: 4 }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "8px 10px 8px 12px",
@@ -183,24 +185,25 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
       </div>
 
       {/* Terminal + right panel */}
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+      <div className="terminal-body" style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Terminal */}
-        <div style={{ flex: 1, background: "rgba(7,10,20,0.85)", minWidth: 0 }}>
+        <div className="terminal-main" style={{ flex: 1, background: "rgba(7,10,20,0.85)", minWidth: 0 }}>
           <TerminalTabs deviceId={deviceId} hostname={host} onHistoryChange={handleHistoryChange} />
         </div>
 
         {/* Right info panel */}
         {rightOpen && device && (
-          <div style={{
-            width: 288, display: "flex", flexDirection: "column",
-            borderLeft: "1px solid var(--line)",
-            background: "rgba(10,14,26,0.6)",
-            backdropFilter: "blur(14px)",
-            flexShrink: 0,
-            overflowY: "auto",
-          }}
-            className="ch-scroll"
-          >
+          <>
+            <div className={`terminal-sheet-backdrop${closingSheet ? " closing" : ""}`} onClick={closePanel} />
+            <div className={`terminal-side-panel ch-scroll${closingSheet ? " closing" : ""}`} style={{
+              width: 288, display: "flex", flexDirection: "column",
+              borderLeft: "1px solid var(--line)",
+              background: "rgba(10,14,26,0.6)",
+              backdropFilter: "blur(14px)",
+              flexShrink: 0,
+              overflowY: "auto",
+            }}>
+              <div className="terminal-sheet-grab" />
             {/* Server info */}
             <div style={{ padding: 16, borderBottom: "1px solid var(--line)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -330,7 +333,8 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
                 )}
               </div>
             </div>
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>

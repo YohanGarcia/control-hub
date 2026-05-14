@@ -302,4 +302,134 @@ export function Sidebar() {
   )
 }
 
+export function MobileSidebarMenu() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { activeDeviceId, setMobileMenuOpen } = useUIStore()
+  const { data: devices } = useDevices()
+  const { logout } = useAuthStore()
+
+  const resolvedDeviceId = activeDeviceId ?? devices?.[0]?.id
+
+  function resolveHref(item: typeof NAV_ITEMS[0]): string {
+    if (item.id === "terminal") return resolvedDeviceId ? `/terminal/${resolvedDeviceId}` : "/terminal"
+    if (item.id === "devices") return resolvedDeviceId ? `/devices/${resolvedDeviceId}` : "/devices"
+    return item.href
+  }
+
+  function isActive(item: typeof NAV_ITEMS[0]) {
+    if (item.id === "metrics") return pathname === "/"
+    if (item.id === "terminal") return pathname.startsWith("/terminal")
+    if (item.id === "devices") return pathname.startsWith("/devices")
+    return pathname.startsWith(item.href)
+  }
+
+  async function handleLogout() {
+    await logout()
+    setMobileMenuOpen(false)
+    router.push("/login")
+  }
+
+  return (
+    <nav style={{ display: "flex", flexDirection: "column", height: "100%", padding: 14, gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 10, borderBottom: "1px solid var(--line)" }}>
+        <LogoIcon />
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", lineHeight: 1.1 }}>Control Center</span>
+          <span style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: 0.4 }}>Menu movil</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8, flex: 1 }}>
+        {NAV_ITEMS.map((item) => {
+          const on = isActive(item)
+          return (
+            <Link
+              key={`mobile-${item.id}`}
+              href={resolveHref(item)}
+              onClick={() => setMobileMenuOpen(false)}
+              style={{
+                width: "100%",
+                minHeight: 42,
+                borderRadius: 10,
+                background: on ? "rgba(59,130,246,0.16)" : "transparent",
+                border: on ? "1px solid rgba(59,130,246,0.5)" : "1px solid var(--line)",
+                color: on ? "#fff" : "var(--text-2)",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "0 12px",
+                fontSize: 13,
+                fontWeight: 500,
+                textDecoration: "none",
+              }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          )
+        })}
+      </div>
+
+      <button
+        onClick={handleLogout}
+        style={{
+          width: "100%",
+          height: 36,
+          borderRadius: 9,
+          border: "1px solid rgba(239,68,68,0.35)",
+          background: "rgba(239,68,68,0.08)",
+          color: "#fca5a5",
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 600,
+        }}
+      >
+        Cerrar sesion
+      </button>
+    </nav>
+  )
+}
+
+export function MobileBottomNav() {
+  const pathname = usePathname()
+  const { activeDeviceId } = useUIStore()
+  const { data: devices } = useDevices()
+
+  const resolvedDeviceId = activeDeviceId ?? devices?.[0]?.id
+
+  function resolveHref(item: typeof NAV_ITEMS[0]): string {
+    if (item.id === "terminal") return resolvedDeviceId ? `/terminal/${resolvedDeviceId}` : "/terminal"
+    if (item.id === "devices") return resolvedDeviceId ? `/devices/${resolvedDeviceId}` : "/devices"
+    return item.href
+  }
+
+  function isActive(item: typeof NAV_ITEMS[0]) {
+    if (item.id === "metrics") return pathname === "/"
+    if (item.id === "terminal") return pathname.startsWith("/terminal")
+    if (item.id === "devices") return pathname.startsWith("/devices")
+    return pathname.startsWith(item.href)
+  }
+
+  const items = NAV_ITEMS.filter((item) => item.id !== "alerts")
+
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Navegacion movil">
+      {items.map((item) => {
+        const on = isActive(item)
+        return (
+          <Link
+            key={`bottom-${item.id}`}
+            href={resolveHref(item)}
+            className={`mobile-bottom-nav-item${on ? " active" : ""}`}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
 export function MobileMenuButton() { return null }

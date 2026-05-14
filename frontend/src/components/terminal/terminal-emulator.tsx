@@ -125,6 +125,26 @@ export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: Termin
     }
   }, [isConnected, deviceId, sessionId, sendMessage])
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return
+    const vv = window.visualViewport
+
+    const syncKeyboardOffset = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      document.documentElement.style.setProperty("--terminal-kb-offset", `${Math.round(offset)}px`)
+    }
+
+    syncKeyboardOffset()
+    vv.addEventListener("resize", syncKeyboardOffset)
+    vv.addEventListener("scroll", syncKeyboardOffset)
+
+    return () => {
+      vv.removeEventListener("resize", syncKeyboardOffset)
+      vv.removeEventListener("scroll", syncKeyboardOffset)
+      document.documentElement.style.setProperty("--terminal-kb-offset", "0px")
+    }
+  }, [])
+
   const onScroll = () => {
     const el = outputRef.current
     if (!el) return
@@ -274,7 +294,7 @@ export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: Termin
       </div>
 
       {/* Command input */}
-      <div style={{
+      <div className="terminal-input-wrap" style={{
         margin: "0 18px 18px",
         display: "flex", alignItems: "center", gap: 10,
         padding: "10px 12px",
@@ -285,13 +305,14 @@ export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: Termin
         boxShadow: "0 10px 30px rgba(0,0,0,0.45), 0 0 24px rgba(59,130,246,0.10), inset 0 0 16px rgba(59,130,246,0.06)",
         flexShrink: 0,
       }}>
-        <span className="mono" style={{ display: "inline-flex", alignItems: "baseline", fontSize: 13, flexShrink: 0 }}>
+        <span className="mono terminal-input-prefix" style={{ display: "inline-flex", alignItems: "baseline", fontSize: 13, flexShrink: 0 }}>
           <span style={{ color: "var(--ch-green-2)" }}>{hostname}</span>
           <span style={{ color: "var(--ch-text-3)" }}>:</span>
           <span style={{ color: "var(--ch-blue-2)" }}>~</span>
           <span style={{ color: "var(--ch-text-3)", marginRight: 4 }}>$</span>
         </span>
         <input
+          className="mono terminal-input-field"
           value={input}
           onChange={(e) => { setInput(e.target.value); setHistoryCursor(-1) }}
           onKeyDown={(e) => {
@@ -314,7 +335,6 @@ export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: Termin
             if ((e.ctrlKey || e.metaKey) && e.key === "l") { e.preventDefault(); setBuffer("") }
           }}
           placeholder="Escribe un comando… (help, status, ps, docker ps)"
-          className="mono"
           spellCheck={false}
           autoFocus
           disabled={!sessionId}
@@ -324,13 +344,14 @@ export function TerminalEmulator({ deviceId, hostname, onHistoryChange }: Termin
             opacity: sessionId ? 1 : 0.55,
           }}
         />
-        <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--ch-text-4)", fontSize: 11, flexShrink: 0 }}>
+        <div className="terminal-input-hints" style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--ch-text-4)", fontSize: 11, flexShrink: 0 }}>
           {["↑", "↓"].map((k) => (
             <kbd key={k} style={{ padding: "2px 5px", borderRadius: 4, background: "rgba(255,255,255,0.06)", border: "1px solid var(--line)", fontFamily: "inherit" }}>{k}</kbd>
           ))}
           <span style={{ marginLeft: 2 }}>historial</span>
         </div>
         <button
+          className="terminal-input-send"
           onClick={sendInput}
           disabled={!sessionId || !input.trim()}
           style={{

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useDevices } from "@/hooks/useDevices"
 import { useUIStore } from "@/stores/uiStore"
@@ -60,6 +60,7 @@ function getDeviceHref(device: Device, pathname: string): string {
 export function DeviceServerList() {
   const [query, setQuery] = useState("")
   const [showCreate, setShowCreate] = useState(false)
+  const [collapsedMobile, setCollapsedMobile] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const { setActiveDeviceId } = useUIStore()
@@ -73,6 +74,22 @@ export function DeviceServerList() {
   const activeIdMatch = pathname.match(/\/(?:devices|terminal)\/(\d+)/)
   const activeId = activeIdMatch ? parseInt(activeIdMatch[1], 10) : null
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const saved = window.localStorage.getItem("device_list_collapsed_mobile")
+    if (saved === "true") setCollapsedMobile(true)
+  }, [])
+
+  function toggleCollapsedMobile() {
+    setCollapsedMobile((prev) => {
+      const next = !prev
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("device_list_collapsed_mobile", String(next))
+      }
+      return next
+    })
+  }
+
   function handleSelect(device: Device) {
     setActiveDeviceId(device.id)
     router.push(getDeviceHref(device, pathname))
@@ -80,7 +97,7 @@ export function DeviceServerList() {
 
   return (
     <>
-    <div style={{
+    <div className={`device-server-list${collapsedMobile ? " collapsed-mobile" : ""}`} style={{
       width: 260,
       display: "flex",
       flexDirection: "column",
@@ -91,8 +108,29 @@ export function DeviceServerList() {
     }}>
       {/* Session header + search */}
       <div style={{ padding: "14px 14px 8px" }}>
-        <div style={{ fontSize: 10, letterSpacing: 1.3, color: "var(--text-3)", fontWeight: 600, marginBottom: 8 }}>
-          SESIÓN ACTIVA
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1.3, color: "var(--text-3)", fontWeight: 600 }}>
+            SESIÓN ACTIVA
+          </div>
+          <button
+            type="button"
+            className="device-server-mobile-toggle"
+            onClick={toggleCollapsedMobile}
+            style={{
+              display: "none",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 8px",
+              borderRadius: 8,
+              border: "1px solid var(--line)",
+              background: "rgba(255,255,255,0.03)",
+              color: "var(--text-2)",
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            {collapsedMobile ? "Expandir" : "Contraer"}
+          </button>
         </div>
         <div style={{ position: "relative" }}>
           <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", display: "inline-flex" }}>
@@ -121,6 +159,8 @@ export function DeviceServerList() {
           </span>
         </div>
       </div>
+
+      <div className="device-server-body" style={{ display: "contents" }}>
 
       {/* Count header + add button */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px 6px" }}>
@@ -250,6 +290,7 @@ export function DeviceServerList() {
             <span style={{ color: "var(--text-2)" }}>{f.n}</span>
           </div>
         ))}
+      </div>
       </div>
     </div>
 

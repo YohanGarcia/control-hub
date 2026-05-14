@@ -36,7 +36,7 @@ function Panel({ title, action, children, padless }: {
   return (
     <div style={{ background: "rgba(15,20,36,0.6)", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden" }}>
       {(title || action) && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, padding: "14px 18px", borderBottom: "1px solid var(--line)" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{title}</div>
           {action}
         </div>
@@ -393,7 +393,7 @@ function ResumenTab({ device, status, sparkData, rangeMinutes }: {
 
   return (
     <>
-      <div style={{ display: "flex", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
         <MetricCardBig icon={ICON_CPU} title="CPU" value={cpu} sub="Uso del procesador" badge={device.os_name?.split(" ")[0] ?? "Linux"} color="var(--ch-blue-2)" accentBg="rgba(59,130,246,0.18)" data={sparkData.cpu} rangeMinutes={rangeMinutes} />
         <MetricCardBig icon={ICON_RAM} title="RAM" value={ram} sub="Uso de memoria" badge="RAM" color="var(--ch-green-2)" accentBg="rgba(34,197,94,0.18)" data={sparkData.ram} rangeMinutes={rangeMinutes} />
         <MetricCardBig icon={ICON_DISK} title="Disco" value={disk} sub="Uso del disco" badge="Disco" color="var(--ch-violet-2)" accentBg="rgba(139,92,246,0.18)" data={sparkData.disk} rangeMinutes={rangeMinutes} />
@@ -401,7 +401,7 @@ function ResumenTab({ device, status, sparkData, rangeMinutes }: {
 
       {/* Info strip — 6 columnas con iconos */}
       <div style={{
-        display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 0,
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 0,
         background: "rgba(15,20,36,0.5)", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden",
       }}>
         {infoStrip.map((cell, i) => (
@@ -590,7 +590,7 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
   return (
     <>
       {/* Fila 1 — 4 tarjetas SmallMetric */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div className="metricas-kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallMetric icon={ICON_CPU} label="CPU promedio" value={`${cpuStat.avg.toFixed(0)}%`} delta={cpuDelta} color="var(--ch-blue-2)" data={sparkData.cpu} />
         <SmallMetric
           icon={ICON_RAM} label="Memoria" value={`${ramGb} GB`} delta={ramDelta}
@@ -612,7 +612,7 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
       <Panel
         title="Uso del sistema · histórico"
         action={
-          <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "var(--ch-text-3)" }}>
+          <div className="metricas-legend" style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "var(--ch-text-3)" }}>
             <LegendDot c="var(--ch-blue-2)">CPU</LegendDot>
             <LegendDot c="var(--ch-green-2)">RAM</LegendDot>
             <LegendDot c="var(--ch-violet-2)">Disco</LegendDot>
@@ -634,10 +634,10 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
       </Panel>
 
       {/* Fila 3 — CPU por núcleo + Red */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
+      <div className="metricas-dual-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
         {/* CPU por núcleo */}
         <Panel title={`CPU por núcleo (${cores.length})`} action={<Pill>{cpuStat.min.toFixed(0)} — {cpuStat.max.toFixed(0)}%</Pill>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div className="metricas-cores-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
             {cores.map((c, i) => {
               const last = c[c.length - 1] ?? 0
               return (
@@ -655,7 +655,7 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
 
         {/* Red */}
         <Panel title="Red · entrada / salida" action={<Pill color="var(--ch-green-2)" bg="rgba(34,197,94,0.10)" border="rgba(34,197,94,0.3)">{(netIn[netIn.length - 1] ?? 0).toFixed(0)} Mbps</Pill>}>
-          <div style={{ display: "flex", gap: 18, marginBottom: 12 }}>
+          <div className="metricas-bigstats-row" style={{ display: "flex", gap: 18, marginBottom: 12 }}>
             <BigStat label="Entrada" value={(netIn[netIn.length - 1] ?? 0).toFixed(0)} unit="Mbps" color="var(--ch-green-2)" />
             <BigStat label="Salida" value={(netOut[netOut.length - 1] ?? 0).toFixed(0)} unit="Mbps" color="var(--ch-blue-2)" />
             <BigStat label="Paquetes/s" value="14.2K" color="var(--ch-violet-2)" />
@@ -671,7 +671,7 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
       </div>
 
       {/* Fila 4 — Disco por mount + Carga promedio + Temperatura */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <div className="metricas-triple-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
         <Panel title="Disco · uso por punto de montaje">
           <DiskRow path="/" used={201} total={480} color="var(--ch-violet-2)" />
           <DiskRow path="/var" used={64} total={120} color="var(--ch-blue-2)" />
@@ -722,14 +722,14 @@ function ProcesosTab() {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div className="procesos-kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallStat label="Procesos totales" value={MOCK_PROCESSES.length} icon={ICON_CHECK} />
         <SmallStat label="En ejecución" value={MOCK_PROCESSES.filter(p => p.state === "running").length} icon={ICON_CHECK} color="var(--ch-green-2)" />
         <SmallStat label="En espera" value={MOCK_PROCESSES.filter(p => p.state === "sleeping").length} icon={ICON_CHECK} color="var(--ch-blue-2)" />
         <SmallStat label="Zombies" value={0} icon={ICON_CHECK} color="var(--ch-red)" />
       </div>
       <Panel padless title={`${MOCK_PROCESSES.length} procesos`}>
-        <div style={{ overflowX: "auto" }}>
+        <div className="procesos-table-wrap" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ color: "var(--ch-text-3)", fontSize: 11, letterSpacing: 0.8 }}>
@@ -797,7 +797,7 @@ function ServiciosTab() {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallStat label="Total servicios" value={MOCK_SERVICES.length} icon={ICON_CHECK} />
         <SmallStat label="Activos" value={MOCK_SERVICES.filter(s => s.state === "active").length} icon={ICON_CHECK} color="var(--ch-green-2)" />
         <SmallStat label="Inactivos" value={0} icon={ICON_CHECK} color="var(--ch-text-3)" />
@@ -888,7 +888,7 @@ function RegistrosTab() {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallStat label="Eventos total" value={lines.length} icon={ICON_CHECK} color="var(--ch-blue-2)" />
         <SmallStat label="Info" value={lines.filter(l => l.sev === "info").length} icon={ICON_CHECK} color="var(--ch-blue-2)" />
         <SmallStat label="Advertencias" value={lines.filter(l => l.sev === "warn").length} icon={ICON_CHECK} color="var(--ch-amber)" />
@@ -941,7 +941,7 @@ function AlertasTab() {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallStat label="Activas" value={MOCK_ALERTS.filter(a => !a.acked).length} icon={ICON_CHECK} color="var(--ch-amber)" />
         <SmallStat label="Críticas" value={MOCK_ALERTS.filter(a => a.sev === "err" && !a.acked).length} icon={ICON_CHECK} color="var(--ch-red)" />
         <SmallStat label="Reconocidas" value={MOCK_ALERTS.filter(a => a.acked).length} icon={ICON_CHECK} color="var(--ch-green-2)" />
@@ -999,7 +999,7 @@ function ConfiguracionTab({ device }: { device: { name: string; host_type: strin
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
         <Panel title="General">
           {[
             { label: "Nombre del dispositivo", hint: "Identificador único", children: <input value={hostname} onChange={e => setHostname(e.target.value)} style={{ padding: "7px 10px", minWidth: 220, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)", borderRadius: 8, color: "#fff", fontFamily: "inherit", fontSize: 12.5, outline: "none" }} /> },
@@ -1107,7 +1107,7 @@ function AccionesTab({ deviceId }: { deviceId: number }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <div className="acciones-kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
         <SmallStat label="Acciones disponibles" value={actions.length} icon={ICON_CHECK} color="var(--ch-blue-2)" />
         <SmallStat label="Activas" value={actions.filter(a => a.is_active).length} icon={ICON_CHECK} color="var(--ch-green-2)" />
         <SmallStat label="Inactivas" value={actions.filter(a => !a.is_active).length} icon={ICON_CHECK} color="var(--ch-text-3)" />
@@ -1148,7 +1148,7 @@ function AccionesTab({ deviceId }: { deviceId: number }) {
       <Panel padless title={`${actions.length} acciones disponibles`}>
         <div style={{ display: "flex", flexDirection: "column" }}>
           {actions.map((action, i) => (
-            <div key={action.id} style={{
+            <div key={action.id} className="acciones-item-row" style={{
               display: "grid", gridTemplateColumns: "1fr auto",
               gap: 14, alignItems: "center", padding: "16px 18px",
               borderTop: i === 0 ? "none" : "1px solid var(--line)",
@@ -1161,7 +1161,7 @@ function AccionesTab({ deviceId }: { deviceId: number }) {
                     <Pill color="var(--ch-text-3)" bg="rgba(255,255,255,0.04)" border="var(--line)">Inactiva</Pill>
                   )}
                 </div>
-                <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: "var(--ch-text-3)" }}>
+                <div className="acciones-item-meta" style={{ display: "flex", gap: 12, fontSize: 11.5, color: "var(--ch-text-3)" }}>
                   <span className="mono">{action.slug}</span>
                   <span>·</span>
                   <span>Timeout {action.timeout_seconds}s</span>
@@ -1170,6 +1170,7 @@ function AccionesTab({ deviceId }: { deviceId: number }) {
                 </div>
               </div>
               <button
+                className="acciones-run-btn"
                 onClick={() => handleRun(action)}
                 disabled={!action.is_active || runningId === action.id}
                 style={{
@@ -1221,7 +1222,7 @@ function HistorialTab({ deviceId }: { deviceId: number }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <SmallStat label="Total ejecuciones" value={history.length} icon={ICON_CHECK} />
         <SmallStat label="Completadas" value={succeeded} icon={ICON_CHECK} color="var(--ch-green-2)" />
         <SmallStat label="Fallidas" value={failed} icon={ICON_CHECK} color="var(--ch-red)" />
@@ -1259,7 +1260,7 @@ function HistorialTab({ deviceId }: { deviceId: number }) {
       )}
 
       <Panel padless title={`${history.length} ejecuciones`}>
-        <div style={{ overflowX: "auto" }}>
+        <div className="historial-table-wrap" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ color: "var(--ch-text-3)", fontSize: 11, letterSpacing: 0.8 }}>
@@ -1280,7 +1281,7 @@ function HistorialTab({ deviceId }: { deviceId: number }) {
                     <td style={{ padding: "10px 14px" }}><span style={{ color: "var(--ch-text-3)", fontSize: 11.5 }}>{fmtDate(run.started_at)}</span></td>
                     <td style={{ padding: "10px 14px" }}><span style={{ color: "var(--ch-text-3)", fontSize: 11.5 }}>{fmtDate(run.finished_at)}</span></td>
                     <td style={{ padding: "10px 14px" }}>
-                      <button onClick={() => setSelected(run)} style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", border: "1px solid var(--line)", color: "var(--ch-text-3)", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
+                      <button className="historial-ver-btn" onClick={() => setSelected(run)} style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", border: "1px solid var(--line)", color: "var(--ch-text-3)", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
                         Ver
                       </button>
                     </td>
@@ -1444,10 +1445,10 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="device-detail-page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Device header */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
+        display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12,
         padding: "18px 24px",
         borderBottom: "1px solid var(--line)",
         background: "rgba(10,14,26,0.5)",
@@ -1485,7 +1486,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
         </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => router.push(`/terminal/${device.id}`)} style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "8px 14px", borderRadius: 10,
@@ -1510,13 +1511,13 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
 
       {/* Tabs bar */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
+        display: "flex", alignItems: "center",
         padding: "0 24px",
         borderBottom: "1px solid var(--line)",
         background: "rgba(10,14,26,0.35)",
       }}>
         {/* Tab buttons */}
-        <div style={{ display: "flex", alignItems: "center" }}>
+        <div className="ch-scroll" style={{ display: "flex", alignItems: "center", overflowX: "auto", minWidth: 0, flex: 1 }}>
           {TABS.map((t) => {
             const on = t === activeTab
             return (
@@ -1526,6 +1527,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
                 color: on ? "#fff" : "var(--ch-text-3)",
                 fontSize: 13, fontWeight: on ? 600 : 500, cursor: "pointer",
                 fontFamily: "inherit",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}>
                 {t}
                 {on && (
@@ -1540,78 +1543,82 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
           })}
         </div>
 
-        {/* Right side: range + status */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setRangeOpen(o => !o)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "7px 12px", borderRadius: 9,
-                background: rangeOpen ? "rgba(59,130,246,0.08)" : "rgba(255,255,255,0.025)",
-                border: "1px solid " + (rangeOpen ? "rgba(59,130,246,0.4)" : "var(--line)"),
-                color: "var(--ch-text)", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
-              }}
-            >
-              {range}
-              <svg viewBox="0 0 24 24" style={{ width: 13, height: 13, color: "var(--ch-text-3)", transform: rangeOpen ? "rotate(180deg)" : "none", transition: "transform 180ms" }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
+      </div>
 
-            {rangeOpen && (
-              <>
-                {/* backdrop to close */}
-                <div style={{ position: "fixed", inset: 0, zIndex: 10 }} onClick={() => setRangeOpen(false)} />
-                <div style={{
-                  position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20,
-                  background: "linear-gradient(180deg, rgba(20,27,49,0.98), rgba(13,18,34,0.98))",
-                  border: "1px solid var(--line)", borderRadius: 10,
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
-                  minWidth: 180, overflow: "hidden",
-                }}>
-                  {[
-                    "Últimos 1 minuto",
-                    "Últimos 5 minutos",
-                    "Últimos 10 minutos",
-                    "Últimos 15 minutos",
-                    "Últimos 20 minutos",
-                    "Últimos 30 minutos",
-                    "Últimos 45 minutos",
-                    "Última hora",
-                  ].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => { setRange(opt); setRangeOpen(false) }}
-                      style={{
-                        width: "100%", display: "block", textAlign: "left",
-                        padding: "9px 14px", background: opt === range ? "rgba(59,130,246,0.12)" : "transparent",
-                        border: 0, borderBottom: "1px solid var(--line)",
-                        color: opt === range ? "var(--ch-blue-2)" : "var(--ch-text)",
-                        fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-                      }}
-                      onMouseEnter={(e) => { if (opt !== range) e.currentTarget.style.background = "rgba(255,255,255,0.04)" }}
-                      onMouseLeave={(e) => { if (opt !== range) e.currentTarget.style.background = "transparent" }}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12,
+        padding: "10px 24px",
+        borderBottom: "1px solid var(--line)",
+        background: "rgba(10,14,26,0.28)",
+      }}>
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setRangeOpen(o => !o)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "7px 12px", borderRadius: 9,
+              background: rangeOpen ? "rgba(59,130,246,0.08)" : "rgba(255,255,255,0.025)",
+              border: "1px solid " + (rangeOpen ? "rgba(59,130,246,0.4)" : "var(--line)"),
+              color: "var(--ch-text)", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            {range}
+            <svg viewBox="0 0 24 24" style={{ width: 13, height: 13, color: "var(--ch-text-3)", transform: rangeOpen ? "rotate(180deg)" : "none", transition: "transform 180ms" }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
 
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ch-green-2)" }}>
-            <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8 }}>
-              <span className="pulse" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--ch-green)", boxShadow: "0 0 8px var(--ch-green)" }} />
-            </span>
-            Actualizando…
-          </span>
+          {rangeOpen && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 10 }} onClick={() => setRangeOpen(false)} />
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20,
+                background: "linear-gradient(180deg, rgba(20,27,49,0.98), rgba(13,18,34,0.98))",
+                border: "1px solid var(--line)", borderRadius: 10,
+                boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+                minWidth: 180, overflow: "hidden",
+              }}>
+                {[
+                  "Últimos 1 minuto",
+                  "Últimos 5 minutos",
+                  "Últimos 10 minutos",
+                  "Últimos 15 minutos",
+                  "Últimos 20 minutos",
+                  "Últimos 30 minutos",
+                  "Últimos 45 minutos",
+                  "Última hora",
+                ].map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => { setRange(opt); setRangeOpen(false) }}
+                    style={{
+                      width: "100%", display: "block", textAlign: "left",
+                      padding: "9px 14px", background: opt === range ? "rgba(59,130,246,0.12)" : "transparent",
+                      border: 0, borderBottom: "1px solid var(--line)",
+                      color: opt === range ? "var(--ch-blue-2)" : "var(--ch-text)",
+                      fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                    }}
+                    onMouseEnter={(e) => { if (opt !== range) e.currentTarget.style.background = "rgba(255,255,255,0.04)" }}
+                    onMouseLeave={(e) => { if (opt !== range) e.currentTarget.style.background = "transparent" }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
+
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ch-green-2)" }}>
+          <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8 }}>
+            <span className="pulse" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--ch-green)", boxShadow: "0 0 8px var(--ch-green)" }} />
+          </span>
+          Actualizando…
+        </span>
       </div>
 
       {/* Tab content */}
-      <div className="ch-scroll" style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="ch-scroll device-tab-content" style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
         {activeTab === "Resumen" && <ResumenTab device={device} status={latestMetric} sparkData={sparkData} rangeMinutes={rangeMinutes} />}
         {activeTab === "Métricas" && <MetricasTab sparkData={sparkData} mergedMetrics={mergedMetrics} metricsCount={mergedMetrics.length} rangeMinutes={rangeMinutes} />}
         {activeTab === "Acciones" && <AccionesTab deviceId={deviceId} />}
