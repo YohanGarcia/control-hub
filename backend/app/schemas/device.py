@@ -40,6 +40,14 @@ class DeviceMetricResponse(BaseModel):
     disk_max: float | None = None
     sample_count: int = 1
     window_seconds: int = 1
+    net_bytes_recv: float | None = None
+    net_bytes_sent: float | None = None
+    cpu_per_core: list[float] | None = None
+    load_avg_1: float | None = None
+    load_avg_5: float | None = None
+    load_avg_15: float | None = None
+    temps: list[dict[str, float | str]] | None = None
+    disk_mounts: list[dict[str, float | str]] | None = None
     uptime_seconds: float
     created_at: datetime
 

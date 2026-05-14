@@ -438,6 +438,11 @@ type MetricSample = {
   ram_min: number | null; ram_max: number | null
   disk_min: number | null; disk_max: number | null
   sample_count: number; window_seconds: number
+  net_bytes_recv: number | null; net_bytes_sent: number | null
+  cpu_per_core: number[] | null
+  load_avg_1: number | null; load_avg_5: number | null; load_avg_15: number | null
+  temps: Array<{ label: string; value: number; max?: number }> | null
+  disk_mounts: Array<{ path: string; used_gb: number; total_gb: number; percent: number }> | null
   uptime_seconds: number; created_at: string
 }
 
@@ -569,19 +574,93 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
   /* total de samples en la ventana */
   const totalSamples = mergedMetrics.reduce((s, m) => s + m.sample_count, 0)
 
-  /* mock per-core data, estable con useMemo */
-  const cores = useMemo(() => Array.from({ length: 8 }, (_, i) => {
-    const base = sparkData.cpu.length > 0
-      ? sparkData.cpu[sparkData.cpu.length - 1] * (0.6 + (i % 4) * 0.1)
-      : 25 + (i % 4) * 8
-    return sparkData.cpu.length >= 2
-      ? sparkData.cpu.map((v, j) => Math.max(2, Math.min(98, v * (0.55 + (i % 4) * 0.12) + Math.sin((j + i) * 0.8) * 6)))
-      : Array.from({ length: 10 }, () => Math.max(2, Math.min(98, base + Math.random() * 10)))
-  }), [sparkData.cpu])
+  const netIn = useMemo(() => {
+    let prevBytes: number | null = null
+    let prevTs: number | null = null
+    return mergedMetrics.map((m) => {
+      const currentBytes = m.net_bytes_recv
+      const currentTs = new Date(m.created_at).getTime()
+      if (currentBytes == null) return 0
+      if (prevBytes == null || prevTs == null) {
+        prevBytes = currentBytes
+        prevTs = currentTs
+        return 0
+      }
+      const deltaBytes = Math.max(0, currentBytes - prevBytes)
+      const deltaSeconds = Math.max(1, (currentTs - prevTs) / 1000)
+      prevBytes = currentBytes
+      prevTs = currentTs
+      return (deltaBytes * 8) / deltaSeconds / 1_000_000
+    })
+  }, [mergedMetrics])
 
-  /* mock net data derivado del cpu para coherencia visual */
-  const netIn = useMemo(() => sparkData.cpu.map(v => v * 2.1 + 8), [sparkData.cpu])
-  const netOut = useMemo(() => sparkData.cpu.map(v => v * 0.4 + 3), [sparkData.cpu])
+  const netOut = useMemo(() => {
+    let prevBytes: number | null = null
+    let prevTs: number | null = null
+    return mergedMetrics.map((m) => {
+      const currentBytes = m.net_bytes_sent
+      const currentTs = new Date(m.created_at).getTime()
+      if (currentBytes == null) return 0
+      if (prevBytes == null || prevTs == null) {
+        prevBytes = currentBytes
+        prevTs = currentTs
+        return 0
+      }
+      const deltaBytes = Math.max(0, currentBytes - prevBytes)
+      const deltaSeconds = Math.max(1, (currentTs - prevTs) / 1000)
+      prevBytes = currentBytes
+      prevTs = currentTs
+      return (deltaBytes * 8) / deltaSeconds / 1_000_000
+    })
+  }, [mergedMetrics])
+
+  const NUM_MOCK_CORES = 12
+  const cores = useMemo(() => {
+    const samples = mergedMetrics.map((m) => m.cpu_per_core).filter((v): v is number[] => Array.isArray(v) && v.length > 0)
+    if (samples.length > 0) {
+      const maxCores = Math.max(...samples.map((s) => s.length))
+      const rawSeries = Array.from({ length: maxCores }, (_, idx) =>
+        samples.map((sample) => sample[idx]).filter((v): v is number => typeof v === "number")
+      ).filter((series) => series.length > 0)
+      /* auto-escala: si el agente envía fracciones 0–1 en vez de porcentajes 0–100 */
+      const peak = Math.max(...rawSeries.flat(), 0)
+      return peak < 1.5 ? rawSeries.map(s => s.map(v => v * 100)) : rawSeries
+    }
+    /* sin datos reales — mock visual escalado al promedio real */
+    const avgBase = Math.max(cpuStat.avg, 8)
+    return Array.from({ length: NUM_MOCK_CORES }, (_, i) => {
+      const bias = 0.45 + (i % 6) * 0.12
+      if (sparkData.cpu.length >= 2) {
+        return sparkData.cpu.map((v, j) => {
+          const vFloor = Math.max(v, avgBase * 0.25)
+          return Math.max(1, Math.min(99, vFloor * bias + Math.sin((j + i * 1.5) * 0.7) * 4))
+        })
+      }
+      return Array.from({ length: 8 }, (_, j) =>
+        Math.max(1, Math.min(99, avgBase * bias + Math.sin((j + i * 1.5) * 0.7) * 4))
+      )
+    })
+  }, [mergedMetrics, sparkData.cpu, cpuStat.avg])
+  const hasRealCoreData = mergedMetrics.some(m => Array.isArray(m.cpu_per_core) && (m.cpu_per_core as number[]).length > 0)
+
+  const loadSeries = useMemo(
+    () => ({
+      one: mergedMetrics.map((m) => m.load_avg_1).filter((v): v is number => typeof v === "number"),
+      five: mergedMetrics.map((m) => m.load_avg_5).filter((v): v is number => typeof v === "number"),
+      fifteen: mergedMetrics.map((m) => m.load_avg_15).filter((v): v is number => typeof v === "number"),
+    }),
+    [mergedMetrics]
+  )
+
+  const latestTemps = useMemo(() => {
+    const found = [...mergedMetrics].reverse().find((m) => m.temps && m.temps.length > 0)
+    return found?.temps ?? []
+  }, [mergedMetrics])
+
+  const latestMounts = useMemo(() => {
+    const found = [...mergedMetrics].reverse().find((m) => m.disk_mounts && m.disk_mounts.length > 0)
+    return found?.disk_mounts ?? []
+  }, [mergedMetrics])
 
   const cpuDelta = cpuStat.trend >= 0.5 ? `+${cpuStat.trend.toFixed(1)}%` : cpuStat.trend <= -0.5 ? `${cpuStat.trend.toFixed(1)}%` : "estable"
   const ramGb = (ramStat.last / 100 * 8).toFixed(1)
@@ -598,8 +677,8 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
         />
         <SmallMetric
           icon={<svg viewBox="0 0 24 24" style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><circle cx="12" cy="20" r="1"/></svg>}
-          label="Red total" value={`${(netIn[netIn.length - 1] ?? 0).toFixed(0)} Mbps`} delta="+12%"
-          color="var(--ch-violet-2)" data={netIn}
+          label="Red total" value={`${((netIn[netIn.length - 1] ?? 0) + (netOut[netOut.length - 1] ?? 0)).toFixed(1)} Mbps`} delta="realtime"
+          color="var(--ch-violet-2)" data={netIn.length >= 2 ? netIn : [0, 0]}
         />
         <SmallMetric
           icon={ICON_CLOCK}
@@ -636,17 +715,29 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
       {/* Fila 3 — CPU por núcleo + Red */}
       <div className="metricas-dual-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
         {/* CPU por núcleo */}
-        <Panel title={`CPU por núcleo (${cores.length})`} action={<Pill>{cpuStat.min.toFixed(0)} — {cpuStat.max.toFixed(0)}%</Pill>}>
-          <div className="metricas-cores-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
+        <Panel
+          title={`CPU por núcleo (${cores.length})`}
+          action={
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {!hasRealCoreData && <Pill color="var(--ch-amber)" bg="rgba(245,158,11,0.10)" border="rgba(245,158,11,0.3)">mock</Pill>}
+              <Pill>{cpuStat.min.toFixed(0)} — {cpuStat.max.toFixed(0)}%</Pill>
+            </div>
+          }
+        >
+          <div className="metricas-cores-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
             {cores.map((c, i) => {
               const last = c[c.length - 1] ?? 0
+              const barColor = last > 80 ? "var(--ch-red)" : last > 60 ? "var(--ch-amber)" : "var(--ch-blue-2)"
               return (
                 <div key={i} style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.025)", border: "1px solid var(--line)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span className="mono" style={{ fontSize: 11, color: "var(--ch-text-3)" }}>core {i}</span>
                     <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: last > 80 ? "var(--ch-red)" : "#fff" }}>{Math.round(last)}%</span>
                   </div>
-                  <Sparkline data={c.length >= 2 ? c : [0, 0]} color="var(--ch-blue-2)" width={120} height={24} />
+                  <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.04)", marginBottom: 6, overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(100, last)}%`, height: "100%", background: barColor, boxShadow: `0 0 4px ${barColor}`, borderRadius: 2 }} />
+                  </div>
+                  <Sparkline data={c.length >= 2 ? c : [last, last]} color={barColor} width={110} height={22} glow={false} />
                 </div>
               )
             })}
@@ -654,11 +745,11 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
         </Panel>
 
         {/* Red */}
-        <Panel title="Red · entrada / salida" action={<Pill color="var(--ch-green-2)" bg="rgba(34,197,94,0.10)" border="rgba(34,197,94,0.3)">{(netIn[netIn.length - 1] ?? 0).toFixed(0)} Mbps</Pill>}>
+        <Panel title="Red · entrada / salida" action={<Pill color="var(--ch-green-2)" bg="rgba(34,197,94,0.10)" border="rgba(34,197,94,0.3)">{(netIn[netIn.length - 1] ?? 0).toFixed(1)} Mbps</Pill>}>
           <div className="metricas-bigstats-row" style={{ display: "flex", gap: 18, marginBottom: 12 }}>
-            <BigStat label="Entrada" value={(netIn[netIn.length - 1] ?? 0).toFixed(0)} unit="Mbps" color="var(--ch-green-2)" />
-            <BigStat label="Salida" value={(netOut[netOut.length - 1] ?? 0).toFixed(0)} unit="Mbps" color="var(--ch-blue-2)" />
-            <BigStat label="Paquetes/s" value="14.2K" color="var(--ch-violet-2)" />
+            <BigStat label="Entrada" value={(netIn[netIn.length - 1] ?? 0).toFixed(1)} unit="Mbps" color="var(--ch-green-2)" />
+            <BigStat label="Salida" value={(netOut[netOut.length - 1] ?? 0).toFixed(1)} unit="Mbps" color="var(--ch-blue-2)" />
+            <BigStat label="Total" value={((netIn[netIn.length - 1] ?? 0) + (netOut[netOut.length - 1] ?? 0)).toFixed(1)} unit="Mbps" color="var(--ch-violet-2)" />
           </div>
           <MultiSeriesChart
             series={[
@@ -672,33 +763,85 @@ function MetricasTab({ sparkData, mergedMetrics, metricsCount, rangeMinutes }: {
 
       {/* Fila 4 — Disco por mount + Carga promedio + Temperatura */}
       <div className="metricas-triple-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-        <Panel title="Disco · uso por punto de montaje">
-          <DiskRow path="/" used={201} total={480} color="var(--ch-violet-2)" />
-          <DiskRow path="/var" used={64} total={120} color="var(--ch-blue-2)" />
-          <DiskRow path="/home" used={12} total={80} color="var(--ch-green-2)" />
-          <DiskRow path="/tmp" used={0.8} total={8} color="var(--ch-amber)" last />
+        <Panel title="Disco · uso por punto de montaje" action={<Pill>{latestMounts.length > 0 ? "datos reales" : "sin datos"}</Pill>}>
+          {latestMounts.length > 0 ? latestMounts.slice(0, 8).map((m, i) => (
+            <DiskRow
+              key={`${m.path}-${i}`}
+              path={m.path}
+              used={Number(m.used_gb.toFixed(1))}
+              total={Number(m.total_gb.toFixed(1))}
+              color={i % 3 === 0 ? "var(--ch-violet-2)" : i % 3 === 1 ? "var(--ch-blue-2)" : "var(--ch-green-2)"}
+              last={i === Math.min(latestMounts.length, 8) - 1}
+            />
+          )) : <div style={{ fontSize: 12, color: "var(--ch-text-3)" }}>Sin datos de montajes disponibles.</div>}
         </Panel>
 
-        <Panel title="Carga promedio">
+        <Panel title="Carga promedio" action={<Pill>{loadSeries.one.length > 0 ? "datos reales" : "sin datos"}</Pill>}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 18, marginBottom: 16 }}>
-            <BigStat label="1 min" value="0.89" color="var(--ch-green-2)" />
-            <BigStat label="5 min" value="0.74" color="var(--ch-blue-2)" />
-            <BigStat label="15 min" value="0.61" color="var(--ch-violet-2)" />
+            <BigStat label="1 min" value={(loadSeries.one[loadSeries.one.length - 1] ?? 0).toFixed(2)} color="var(--ch-green-2)" />
+            <BigStat label="5 min" value={(loadSeries.five[loadSeries.five.length - 1] ?? 0).toFixed(2)} color="var(--ch-blue-2)" />
+            <BigStat label="15 min" value={(loadSeries.fifteen[loadSeries.fifteen.length - 1] ?? 0).toFixed(2)} color="var(--ch-violet-2)" />
           </div>
           <div style={{ fontSize: 11, color: "var(--ch-text-3)", marginBottom: 6 }}>Tendencia (15 min)</div>
           <Sparkline
-            data={sparkData.cpu.length >= 2 ? sparkData.cpu.map(v => v / 100 * 1.4) : [0.6, 0.7]}
+            data={loadSeries.one.length >= 2 ? loadSeries.one : [0, 0]}
             color="var(--ch-green-2)" width={300} height={56}
           />
         </Panel>
 
-        <Panel title="Temperatura · sensores">
-          <TempRow label="CPU package" v={62} max={95} />
-          <TempRow label="GPU" v={48} max={90} />
-          <TempRow label="NVMe" v={41} max={75} />
-          <TempRow label="Chassis" v={28} max={60} last />
+        <Panel title="Temperatura · sensores" action={<Pill>{latestTemps.length > 0 ? "datos reales" : "sin datos"}</Pill>}>
+          {latestTemps.length > 0 ? latestTemps.slice(0, 8).map((t, i) => (
+            <TempRow key={`${t.label}-${i}`} label={t.label} v={t.value} max={t.max ?? 100} last={i === Math.min(latestTemps.length, 8) - 1} />
+          )) : <div style={{ fontSize: 12, color: "var(--ch-text-3)" }}>Sin sensores de temperatura reportados.</div>}
         </Panel>
       </div>
+
+      {/* Muestras recientes */}
+      <Panel padless title="Muestras recientes" action={<Pill>{metricsCount} registros</Pill>}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ color: "var(--ch-text-3)", fontSize: 11, letterSpacing: 0.8 }}>
+                {["HORA", "CPU %", "RAM %", "DISCO %", "MUESTRAS"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontWeight: 600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...mergedMetrics].reverse().slice(0, 20).map((m, i) => {
+                const t = new Date(m.created_at)
+                const hm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`
+                return (
+                  <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
+                    <td style={{ padding: "8px 14px" }}><span className="mono" style={{ color: "var(--ch-text-2)" }}>{hm}</span></td>
+                    <td style={{ padding: "8px 14px" }}>
+                      <span className="mono" style={{ color: "var(--ch-blue-2)", fontWeight: 600 }}>{m.cpu_percent.toFixed(1)}%</span>
+                      {(m.cpu_min != null && m.cpu_max != null) && (
+                        <div style={{ fontSize: 10, color: "var(--ch-text-4)" }}>{m.cpu_min.toFixed(0)}–{m.cpu_max.toFixed(0)}%</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "8px 14px" }}>
+                      <span className="mono" style={{ color: "var(--ch-green-2)", fontWeight: 600 }}>{m.ram_percent.toFixed(1)}%</span>
+                      {(m.ram_min != null && m.ram_max != null) && (
+                        <div style={{ fontSize: 10, color: "var(--ch-text-4)" }}>{m.ram_min.toFixed(0)}–{m.ram_max.toFixed(0)}%</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "8px 14px" }}>
+                      <span className="mono" style={{ color: "var(--ch-violet-2)", fontWeight: 600 }}>{m.disk_percent.toFixed(1)}%</span>
+                      {(m.disk_min != null && m.disk_max != null) && (
+                        <div style={{ fontSize: 10, color: "var(--ch-text-4)" }}>{m.disk_min.toFixed(0)}–{m.disk_max.toFixed(0)}%</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "8px 14px" }}>
+                      <span className="mono" style={{ fontSize: 11.5, color: "var(--ch-text-2)" }}>{m.sample_count}×{m.window_seconds}s</span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
     </>
   )
 }
@@ -1347,6 +1490,14 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
     disk_max?: number | null
     sample_count?: number
     window_seconds?: number
+    net_bytes_recv?: number | null
+    net_bytes_sent?: number | null
+    cpu_per_core?: number[] | null
+    load_avg_1?: number | null
+    load_avg_5?: number | null
+    load_avg_15?: number | null
+    temps?: Array<{ label: string; value: number; max?: number }> | null
+    disk_mounts?: Array<{ path: string; used_gb: number; total_gb: number; percent: number }> | null
   }): MetricSample => ({
     cpu_percent: metric.cpu_percent,
     ram_percent: metric.ram_percent,
@@ -1361,6 +1512,14 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
     disk_max: metric.disk_max ?? null,
     sample_count: metric.sample_count ?? 1,
     window_seconds: metric.window_seconds ?? 1,
+    net_bytes_recv: metric.net_bytes_recv ?? null,
+    net_bytes_sent: metric.net_bytes_sent ?? null,
+    cpu_per_core: metric.cpu_per_core ?? null,
+    load_avg_1: metric.load_avg_1 ?? null,
+    load_avg_5: metric.load_avg_5 ?? null,
+    load_avg_15: metric.load_avg_15 ?? null,
+    temps: metric.temps ?? null,
+    disk_mounts: metric.disk_mounts ?? null,
   })
 
   useEffect(() => {
@@ -1387,6 +1546,14 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
           disk_max?: number | null
           sample_count?: number
           window_seconds?: number
+          net_bytes_recv?: number | null
+          net_bytes_sent?: number | null
+          cpu_per_core?: number[] | null
+          load_avg_1?: number | null
+          load_avg_5?: number | null
+          load_avg_15?: number | null
+          temps?: Array<{ label: string; value: number; max?: number }> | null
+          disk_mounts?: Array<{ path: string; used_gb: number; total_gb: number; percent: number }> | null
         }
         const metric = normalizeMetricSample(rawMetric)
 

@@ -83,15 +83,83 @@ def enroll_agent(
 
 def get_system_metrics() -> dict[str, Any]:
     cpu = psutil.cpu_percent(interval=1)
+    cpu_per_core = psutil.cpu_percent(interval=None, percpu=True)
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+    net = psutil.net_io_counters()
     boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc)
     uptime = int((datetime.now(timezone.utc) - boot_time).total_seconds())
+
+    load_avg_1 = None
+    load_avg_5 = None
+    load_avg_15 = None
+    if hasattr(os, "getloadavg"):
+        try:
+            la1, la5, la15 = os.getloadavg()
+            load_avg_1 = round(float(la1), 3)
+            load_avg_5 = round(float(la5), 3)
+            load_avg_15 = round(float(la15), 3)
+        except Exception:
+            pass
+
+    temps_payload: list[dict[str, float | str]] | None = None
+    try:
+        raw_temps = psutil.sensors_temperatures(fahrenheit=False)
+        entries: list[dict[str, float | str]] = []
+        for sensor, values in raw_temps.items():
+            for item in values:
+                current = getattr(item, "current", None)
+                if current is None:
+                    continue
+                label = getattr(item, "label", "") or sensor
+                critical = getattr(item, "critical", None)
+                entry: dict[str, float | str] = {
+                    "label": str(label),
+                    "value": round(float(current), 1),
+                }
+                if critical is not None:
+                    entry["max"] = round(float(critical), 1)
+                entries.append(entry)
+        if entries:
+            temps_payload = entries[:16]
+    except Exception:
+        temps_payload = None
+
+    disk_mounts_payload: list[dict[str, float | str]] = []
+    try:
+        for part in psutil.disk_partitions(all=False):
+            mountpoint = part.mountpoint
+            if not mountpoint:
+                continue
+            try:
+                usage = psutil.disk_usage(mountpoint)
+            except Exception:
+                continue
+            disk_mounts_payload.append(
+                {
+                    "path": mountpoint,
+                    "used_gb": round(usage.used / (1024 ** 3), 2),
+                    "total_gb": round(usage.total / (1024 ** 3), 2),
+                    "percent": round(float(usage.percent), 1),
+                }
+            )
+            if len(disk_mounts_payload) >= 12:
+                break
+    except Exception:
+        disk_mounts_payload = []
 
     return {
         "cpu_percent": round(cpu, 1),
         "ram_percent": round(mem.percent, 1),
         "disk_percent": round(disk.percent, 1),
+        "net_bytes_recv": float(net.bytes_recv) if net else None,
+        "net_bytes_sent": float(net.bytes_sent) if net else None,
+        "cpu_per_core": [round(float(v), 1) for v in cpu_per_core] if cpu_per_core else None,
+        "load_avg_1": load_avg_1,
+        "load_avg_5": load_avg_5,
+        "load_avg_15": load_avg_15,
+        "temps": temps_payload,
+        "disk_mounts": disk_mounts_payload if disk_mounts_payload else None,
         "uptime_seconds": uptime,
     }
 

@@ -27,6 +27,14 @@ export interface DeviceMetric {
   disk_max: number | null
   sample_count: number
   window_seconds: number
+  net_bytes_recv: number | null
+  net_bytes_sent: number | null
+  cpu_per_core: number[] | null
+  load_avg_1: number | null
+  load_avg_5: number | null
+  load_avg_15: number | null
+  temps: Array<{ label: string; value: number; max?: number }> | null
+  disk_mounts: Array<{ path: string; used_gb: number; total_gb: number; percent: number }> | null
   uptime_seconds: number
   created_at: string
 }

@@ -65,6 +65,14 @@ class MetricWindow:
     cpu_values: list[float]
     ram_values: list[float]
     disk_values: list[float]
+    net_recv_values: list[float]
+    net_sent_values: list[float]
+    cpu_per_core_values: list[list[float]]
+    load_avg_1_values: list[float]
+    load_avg_5_values: list[float]
+    load_avg_15_values: list[float]
+    last_temps: list[dict[str, float | str]] | None
+    last_disk_mounts: list[dict[str, float | str]] | None
     last_uptime_seconds: float
 
 
@@ -78,6 +86,15 @@ def _flush_metric_window(db, device, device_id: int) -> None:
         return
 
     sample_count = len(window.cpu_values)
+    cpu_per_core_avg = None
+    if window.cpu_per_core_values:
+        max_len = max(len(v) for v in window.cpu_per_core_values)
+        cpu_per_core_avg = []
+        for i in range(max_len):
+            values = [sample[i] for sample in window.cpu_per_core_values if len(sample) > i]
+            if values:
+                cpu_per_core_avg.append(sum(values) / len(values))
+
     store_device_metric(
         db,
         device=device,
@@ -93,6 +110,14 @@ def _flush_metric_window(db, device, device_id: int) -> None:
         disk_max=max(window.disk_values),
         sample_count=sample_count,
         window_seconds=METRIC_PERSIST_WINDOW_SECONDS,
+        net_bytes_recv=(sum(window.net_recv_values) / len(window.net_recv_values)) if window.net_recv_values else None,
+        net_bytes_sent=(sum(window.net_sent_values) / len(window.net_sent_values)) if window.net_sent_values else None,
+        cpu_per_core=cpu_per_core_avg,
+        load_avg_1=(sum(window.load_avg_1_values) / len(window.load_avg_1_values)) if window.load_avg_1_values else None,
+        load_avg_5=(sum(window.load_avg_5_values) / len(window.load_avg_5_values)) if window.load_avg_5_values else None,
+        load_avg_15=(sum(window.load_avg_15_values) / len(window.load_avg_15_values)) if window.load_avg_15_values else None,
+        temps=window.last_temps,
+        disk_mounts=window.last_disk_mounts,
     )
     metric_windows.pop(device_id, None)
 
@@ -457,6 +482,14 @@ async def ws_agent(websocket: WebSocket) -> None:
                             cpu_values=[],
                             ram_values=[],
                             disk_values=[],
+                            net_recv_values=[],
+                            net_sent_values=[],
+                            cpu_per_core_values=[],
+                            load_avg_1_values=[],
+                            load_avg_5_values=[],
+                            load_avg_15_values=[],
+                            last_temps=None,
+                            last_disk_mounts=None,
                             last_uptime_seconds=msg.data.uptime_seconds,
                         )
                         metric_windows[device_id] = window
@@ -464,6 +497,22 @@ async def ws_agent(websocket: WebSocket) -> None:
                     window.cpu_values.append(msg.data.cpu_percent)
                     window.ram_values.append(msg.data.ram_percent)
                     window.disk_values.append(msg.data.disk_percent)
+                    if msg.data.net_bytes_recv is not None:
+                        window.net_recv_values.append(msg.data.net_bytes_recv)
+                    if msg.data.net_bytes_sent is not None:
+                        window.net_sent_values.append(msg.data.net_bytes_sent)
+                    if msg.data.cpu_per_core:
+                        window.cpu_per_core_values.append(msg.data.cpu_per_core)
+                    if msg.data.load_avg_1 is not None:
+                        window.load_avg_1_values.append(msg.data.load_avg_1)
+                    if msg.data.load_avg_5 is not None:
+                        window.load_avg_5_values.append(msg.data.load_avg_5)
+                    if msg.data.load_avg_15 is not None:
+                        window.load_avg_15_values.append(msg.data.load_avg_15)
+                    if msg.data.temps is not None:
+                        window.last_temps = msg.data.temps
+                    if msg.data.disk_mounts is not None:
+                        window.last_disk_mounts = msg.data.disk_mounts
                     window.last_uptime_seconds = msg.data.uptime_seconds
 
                     if (now - window.started_at).total_seconds() >= METRIC_PERSIST_WINDOW_SECONDS:
@@ -478,6 +527,14 @@ async def ws_agent(websocket: WebSocket) -> None:
                                 "cpu_percent": msg.data.cpu_percent,
                                 "ram_percent": msg.data.ram_percent,
                                 "disk_percent": msg.data.disk_percent,
+                                "net_bytes_recv": msg.data.net_bytes_recv,
+                                "net_bytes_sent": msg.data.net_bytes_sent,
+                                "cpu_per_core": msg.data.cpu_per_core,
+                                "load_avg_1": msg.data.load_avg_1,
+                                "load_avg_5": msg.data.load_avg_5,
+                                "load_avg_15": msg.data.load_avg_15,
+                                "temps": msg.data.temps,
+                                "disk_mounts": msg.data.disk_mounts,
                                 "uptime_seconds": msg.data.uptime_seconds,
                                 "created_at": now.isoformat(),
                             },

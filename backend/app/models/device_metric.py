@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -22,6 +22,14 @@ class DeviceMetric(Base):
     disk_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     window_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    net_bytes_recv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_bytes_sent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cpu_per_core: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    load_avg_1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_avg_5: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_avg_15: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temps: Mapped[list[dict[str, float | str]] | None] = mapped_column(JSON, nullable=True)
+    disk_mounts: Mapped[list[dict[str, float | str]] | None] = mapped_column(JSON, nullable=True)
     uptime_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True

@@ -10,6 +10,14 @@ class AgentMetricsData(BaseModel):
     ram_percent: float = Field(ge=0, le=100)
     disk_percent: float = Field(ge=0, le=100)
     uptime_seconds: float = Field(ge=0)
+    net_bytes_recv: float | None = Field(default=None, ge=0)
+    net_bytes_sent: float | None = Field(default=None, ge=0)
+    cpu_per_core: list[float] | None = None
+    load_avg_1: float | None = Field(default=None, ge=0)
+    load_avg_5: float | None = Field(default=None, ge=0)
+    load_avg_15: float | None = Field(default=None, ge=0)
+    temps: list[dict[str, float | str]] | None = None
+    disk_mounts: list[dict[str, float | str]] | None = None
 
 
 class AgentMetricsMessage(BaseModel):
