@@ -9,6 +9,20 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
+## Instalacion con un solo comando
+
+### Ubuntu / Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/install.sh | bash -s -- --server https://control-hub-production-877a.up.railway.app --device-id <ID> --agent-key '<AGENT_KEY>'
+```
+
+### Windows (PowerShell)
+
+```powershell
+$tmp = Join-Path $env:TEMP "control-hub-install.ps1"; iwr https://raw.githubusercontent.com/YohanGarcia/control-hub/main/agent/install.ps1 -OutFile $tmp; & $tmp -Server "https://control-hub-production-877a.up.railway.app" -DeviceId <ID> -AgentKey "<AGENT_KEY>"
+```
+
 ## Registro de dispositivo
 
 Usa la API del backend para registrar un dispositivo y obtener la clave del agente:
