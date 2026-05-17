@@ -36,6 +36,7 @@ class Config:
     agent_key: str
     heartbeat_interval: int = 15
     metrics_interval: int = 1
+    docker_interval: int = 30
 
 
 @dataclass
@@ -161,6 +162,85 @@ def get_system_metrics() -> dict[str, Any]:
         "temps": temps_payload,
         "disk_mounts": disk_mounts_payload if disk_mounts_payload else None,
         "uptime_seconds": uptime,
+    }
+
+
+def get_docker_snapshot() -> dict[str, Any]:
+    try:
+        version_proc = subprocess.run(
+            ["docker", "version", "--format", "{{json .}}"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        if version_proc.returncode != 0:
+            return {"engine": {"runtime": "docker", "version": "unavailable"}, "containers": []}
+        version_data = json.loads((version_proc.stdout or "{}").strip() or "{}")
+    except Exception:
+        return {"engine": {"runtime": "docker", "version": "unavailable"}, "containers": []}
+
+    try:
+        ps_proc = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{json .}}"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+        )
+        if ps_proc.returncode != 0:
+            return {
+                "engine": {
+                    "runtime": "docker",
+                    "version": str(version_data.get("Client", {}).get("Version") or "unknown"),
+                    "api_version": str(version_data.get("Client", {}).get("ApiVersion") or "unknown"),
+                },
+                "containers": [],
+            }
+        lines = [line.strip() for line in (ps_proc.stdout or "").splitlines() if line.strip()]
+    except Exception:
+        lines = []
+
+    containers: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        cid = str(row.get("ID") or "").strip()
+        if not cid:
+            continue
+        state = str(row.get("State") or "unknown").lower()
+        status_text = str(row.get("Status") or "")
+        health = None
+        if "(healthy)" in status_text:
+            health = "healthy"
+        elif "(unhealthy)" in status_text:
+            health = "unhealthy"
+        elif "(health: starting)" in status_text:
+            health = "starting"
+        containers.append(
+            {
+                "container_id": cid,
+                "name": str(row.get("Names") or cid[:12]),
+                "image": str(row.get("Image") or "unknown"),
+                "status": status_text,
+                "state": state,
+                "health": health,
+                "restart_count": 0,
+                "ports": [],
+                "labels": {},
+                "networks": [],
+                "mounts": [],
+                "command": None,
+            }
+        )
+
+    return {
+        "engine": {
+            "runtime": "docker",
+            "version": str(version_data.get("Client", {}).get("Version") or "unknown"),
+            "api_version": str(version_data.get("Client", {}).get("ApiVersion") or "unknown"),
+        },
+        "containers": containers,
     }
 
 
@@ -677,6 +757,21 @@ class Agent:
         except Exception as e:
             log.error(f"Metrics failed: {e}")
 
+    def send_docker_snapshot(self) -> None:
+        if not self.ws or not self.running:
+            return
+        try:
+            snapshot = get_docker_snapshot()
+            msg = {
+                "type": "agent.docker.snapshot.push",
+                "timestamp": int(time.time()),
+                "data": snapshot,
+            }
+            self.ws.send(json.dumps(msg))
+            log.info(f"Docker snapshot sent: {len(snapshot.get('containers', []))} containers")
+        except Exception as e:
+            log.error(f"Docker snapshot failed: {e}")
+
     def on_message(self, ws: websocket.WebSocketApp, raw: str) -> None:
         try:
             msg = json.loads(raw)
@@ -778,6 +873,7 @@ class Agent:
         log.info("Connected to server")
         self.send_heartbeat()
         self.send_metrics()
+        self.send_docker_snapshot()
 
     def on_close(self, ws: websocket.WebSocketApp, code: int, reason: str) -> None:
         log.warning(f"Disconnected: code={code} reason={reason}")
@@ -815,6 +911,14 @@ class Agent:
             mt_next.daemon = True
             mt_next.start()
 
+        def docker_timer() -> None:
+            if not self.running or loop_generation != self._loop_generation:
+                return
+            self.send_docker_snapshot()
+            dk_next = threading.Timer(self.config.docker_interval, docker_timer)
+            dk_next.daemon = True
+            dk_next.start()
+
         import threading
         hb_timer = threading.Timer(self.config.heartbeat_interval, heartbeat_timer)
         hb_timer.daemon = True
@@ -823,6 +927,10 @@ class Agent:
         mt_timer = threading.Timer(self.config.metrics_interval, metrics_timer)
         mt_timer.daemon = True
         mt_timer.start()
+
+        dk_timer = threading.Timer(self.config.docker_interval, docker_timer)
+        dk_timer.daemon = True
+        dk_timer.start()
 
         self.ws.run_forever(ping_interval=30, ping_timeout=10)
 
@@ -839,6 +947,7 @@ def main() -> None:
     parser.add_argument("--credentials-file", required=False, default=".agent_credentials.json", help="Local credentials file path")
     parser.add_argument("--heartbeat-interval", type=int, default=15, help="Heartbeat interval in seconds")
     parser.add_argument("--metrics-interval", type=int, default=1, help="Metrics interval in seconds")
+    parser.add_argument("--docker-interval", type=int, default=30, help="Docker snapshot interval in seconds")
     args = parser.parse_args()
 
     ws_url = args.server.replace("http://", "ws://").replace("https://", "wss://")
@@ -881,6 +990,7 @@ def main() -> None:
         agent_key=str(agent_key),
         heartbeat_interval=args.heartbeat_interval,
         metrics_interval=args.metrics_interval,
+        docker_interval=args.docker_interval,
     )
 
     agent = Agent(config)

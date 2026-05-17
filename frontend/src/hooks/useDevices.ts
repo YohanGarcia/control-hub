@@ -74,6 +74,24 @@ export function useActionRun(runId: number) {
   })
 }
 
+export function useDeviceContainers(id: number) {
+  return useQuery({
+    queryKey: ["devices", id, "containers"],
+    queryFn: () => devicesApi.getContainers(id),
+    enabled: !!id,
+    refetchInterval: 20000,
+  })
+}
+
+export function useDeviceContainerEvents(id: number, limit = 120) {
+  return useQuery({
+    queryKey: ["devices", id, "containers", "events", limit],
+    queryFn: () => devicesApi.getContainerEvents(id, { limit }),
+    enabled: !!id,
+    refetchInterval: 15000,
+  })
+}
+
 export function useCreateDevice() {
   const queryClient = useQueryClient()
 

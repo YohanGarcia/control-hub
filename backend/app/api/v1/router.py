@@ -4,6 +4,7 @@ from app.api.v1.routes import actions
 from app.api.v1.routes import audit
 from app.api.v1.routes import auth
 from app.api.v1.routes import devices
+from app.api.v1.routes import docker
 from app.api.v1.routes import enrollment
 from app.api.v1.routes import health
 from app.api.v1.routes import invitations
@@ -19,5 +20,6 @@ api_router.include_router(enrollment.router, tags=["enrollment"])
 api_router.include_router(actions.router, tags=["actions"])
 api_router.include_router(audit.router, tags=["audit"])
 api_router.include_router(devices.router, tags=["devices"])
+api_router.include_router(docker.router, tags=["docker"])
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(ws.router, tags=["ws"])

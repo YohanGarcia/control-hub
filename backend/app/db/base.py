@@ -2,6 +2,8 @@ from app.models.action_catalog import ActionCatalog
 from app.models.action_run import ActionRun
 from app.models.audit import AuditLog
 from app.models.device import Device
+from app.models.docker_container import DockerContainer
+from app.models.docker_container_event import DockerContainerEvent
 from app.models.device_metric import DeviceMetric
 from app.models.enrollment_token import EnrollmentToken
 from app.models.organization import Organization
@@ -17,6 +19,8 @@ __all__ = [
     "RefreshToken",
     "AuditLog",
     "Device",
+    "DockerContainer",
+    "DockerContainerEvent",
     "DeviceMetric",
     "EnrollmentToken",
     "Organization",

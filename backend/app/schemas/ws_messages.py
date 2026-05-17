@@ -156,3 +156,31 @@ class AgentAiPtyReadyData(BaseModel):
 class AgentAiPtyReadyMessage(BaseModel):
     type: str = Field(pattern=r"^agent\.ai\.pty\.ready$")
     data: AgentAiPtyReadyData
+
+
+class AgentDockerSnapshotContainer(BaseModel):
+    container_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=200)
+    image: str = Field(min_length=1, max_length=300)
+    image_id: str | None = Field(default=None, max_length=200)
+    status: str | None = Field(default=None, max_length=64)
+    state: str | None = Field(default=None, max_length=64)
+    health: str | None = Field(default=None, max_length=32)
+    restart_count: int = Field(default=0, ge=0)
+    created_at: str | None = None
+    started_at: str | None = None
+    ports: list[dict[str, str | int]] | None = None
+    labels: dict[str, str] | None = None
+    networks: list[str] | None = None
+    mounts: list[dict[str, str | bool]] | None = None
+    command: str | None = None
+
+
+class AgentDockerSnapshotData(BaseModel):
+    engine: dict[str, str] | None = None
+    containers: list[AgentDockerSnapshotContainer] = Field(default_factory=list)
+
+
+class AgentDockerSnapshotMessage(BaseModel):
+    type: str = Field(pattern=r"^agent\.docker\.snapshot\.push$")
+    data: AgentDockerSnapshotData

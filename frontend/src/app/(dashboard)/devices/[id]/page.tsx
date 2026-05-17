@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useDevice, useDeviceStatus, useDeviceMetrics, useDeviceActions, useDeviceActionHistory, useRunAction } from "@/hooks/useDevices"
+import { useDevice, useDeviceStatus, useDeviceMetrics, useDeviceActions, useDeviceActionHistory, useRunAction, useDeviceContainers, useDeviceContainerEvents } from "@/hooks/useDevices"
 import type { DeviceAction, ActionRun } from "@/lib/api/devices"
 import { useWebSocket } from "@/components/providers/websocket-provider"
 import { LineChart, Sparkline, MultiSeriesChart } from "@/components/shared/sparkline"
@@ -174,7 +174,7 @@ function getChartTimes(rangeMinutes: number): string[] {
 }
 
 /* ── TABS ── */
-const TABS = ["Resumen", "Métricas", "Acciones", "Historial", "Procesos", "Servicios", "Registros", "Alertas", "Configuración"]
+const TABS = ["Resumen", "Métricas", "Ops", "Acciones", "Historial", "Procesos", "Servicios", "Registros", "Alertas", "Configuración"]
 
 /* ── InfoStrip icons ── */
 const ICON_CUBE = <svg viewBox="0 0 24 24" style={{ width: 15, height: 15 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
@@ -1208,6 +1208,66 @@ function ConfiguracionTab({ device }: { device: { name: string; host_type: strin
   )
 }
 
+function OpsTab({ deviceId }: { deviceId: number }) {
+  const { data: containers = [], isLoading: loadingContainers } = useDeviceContainers(deviceId)
+  const { data: events = [], isLoading: loadingEvents } = useDeviceContainerEvents(deviceId, 120)
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+        <SmallStat label="Contenedores" value={containers.length} icon={ICON_CHECK} color="var(--ch-blue-2)" />
+        <SmallStat label="Running" value={containers.filter((c) => c.state === "running").length} icon={ICON_CHECK} color="var(--ch-green-2)" />
+        <SmallStat label="Detenidos" value={containers.filter((c) => c.state !== "running").length} icon={ICON_CHECK} color="var(--ch-red)" />
+        <SmallStat label="Eventos" value={events.length} icon={ICON_CHECK} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+        <Panel padless title="Contenedores Docker">
+          {loadingContainers ? (
+            <div style={{ padding: 16, color: "var(--ch-text-3)", fontSize: 12 }}>Cargando contenedores…</div>
+          ) : containers.length === 0 ? (
+            <div style={{ padding: 16, color: "var(--ch-text-3)", fontSize: 12 }}>Sin contenedores reportados por el agente.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {containers.map((c, i) => (
+                <div key={c.container_id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "12px 16px", borderTop: i === 0 ? "none" : "1px solid var(--line)" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="mono" style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>{c.name}</div>
+                    <div className="mono" style={{ color: "var(--ch-text-3)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.image}</div>
+                  </div>
+                  <Pill color={c.state === "running" ? "var(--ch-green-2)" : "var(--ch-red)"} bg={c.state === "running" ? "rgba(34,197,94,0.10)" : "rgba(239,68,68,0.10)"} border={c.state === "running" ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}>
+                    {c.state}
+                  </Pill>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel padless title="Timeline Docker">
+          {loadingEvents ? (
+            <div style={{ padding: 16, color: "var(--ch-text-3)", fontSize: 12 }}>Cargando eventos…</div>
+          ) : events.length === 0 ? (
+            <div style={{ padding: 16, color: "var(--ch-text-3)", fontSize: 12 }}>Sin eventos aún.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {events.map((e, i) => (
+                <div key={e.id} style={{ display: "grid", gridTemplateColumns: "88px 1fr", gap: 10, padding: "10px 16px", borderTop: i === 0 ? "none" : "1px solid var(--line)" }}>
+                  <span className="mono" style={{ color: "var(--ch-text-4)", fontSize: 11 }}>{new Date(e.created_at).toLocaleTimeString()}</span>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#fff" }}>{e.summary}</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: "var(--ch-text-3)" }}>{e.event_type} · {e.container_id.slice(0, 12)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </>
+  )
+}
+
 /* ── Acciones Tab ── */
 const STATUS_META: Record<ActionRun["status"], { c: string; bg: string; b: string; l: string }> = {
   queued:    { c: "var(--ch-text-2)", bg: "rgba(255,255,255,0.04)", b: "var(--line)",             l: "En cola"    },
@@ -1788,6 +1848,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ id: str
       <div className="ch-scroll device-tab-content" style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
         {activeTab === "Resumen" && <ResumenTab device={device} status={latestMetric} sparkData={sparkData} rangeMinutes={rangeMinutes} />}
         {activeTab === "Métricas" && <MetricasTab sparkData={sparkData} mergedMetrics={mergedMetrics} metricsCount={mergedMetrics.length} rangeMinutes={rangeMinutes} />}
+        {activeTab === "Ops" && <OpsTab deviceId={deviceId} />}
         {activeTab === "Acciones" && <AccionesTab deviceId={deviceId} />}
         {activeTab === "Historial" && <HistorialTab deviceId={deviceId} />}
         {activeTab === "Procesos" && <ProcesosTab />}

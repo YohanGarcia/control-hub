@@ -76,6 +76,39 @@ export interface ActionRun {
   created_at: string
 }
 
+export interface DockerContainer {
+  id: number
+  device_id: number
+  container_id: string
+  name: string
+  image: string
+  image_id: string | null
+  state: string
+  health: string | null
+  restart_count: number
+  ports_json: Array<Record<string, string | number>> | null
+  labels_json: Record<string, string> | null
+  networks_json: string[] | null
+  mounts_json: Array<Record<string, string | boolean>> | null
+  command: string | null
+  created_at_container: string | null
+  started_at_container: string | null
+  last_seen_at: string
+  is_present: boolean
+  updated_at: string
+}
+
+export interface DockerContainerEvent {
+  id: number
+  device_id: number
+  container_id: string
+  event_type: string
+  severity: string
+  summary: string
+  payload_json: Record<string, unknown> | Array<Record<string, unknown>> | null
+  created_at: string
+}
+
 export interface RunActionRequest {
   params?: Record<string, unknown>
 }
@@ -127,6 +160,16 @@ export const devicesApi = {
 
   getRun: (runId: number) =>
     apiClient.get<ActionRun>(`/runs/${runId}`),
+
+  getContainers: (id: number) =>
+    apiClient.get<DockerContainer[]>(`/devices/${id}/containers`),
+
+  getContainerEvents: (id: number, params?: { limit?: number }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.limit) searchParams.set("limit", String(params.limit))
+    const query = searchParams.toString()
+    return apiClient.get<DockerContainerEvent[]>(`/devices/${id}/containers/events${query ? `?${query}` : ""}`)
+  },
 }
 
 export const auditApi = {

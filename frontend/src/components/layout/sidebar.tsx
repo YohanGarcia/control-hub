@@ -38,9 +38,9 @@ const NAV_ITEMS = [
     ),
   },
   {
-    id: "alerts",
-    label: "Alertas",
-    href: "/audit",
+    id: "ops",
+    label: "Ops Center",
+    href: "/ops",
     icon: (
       <svg viewBox="0 0 24 24" style={{ width: 18, height: 18, flexShrink: 0 }} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <path d="M6 8a6 6 0 0112 0c0 7 3 7 3 9H3c0-2 3-2 3-9z"/><path d="M10 21a2 2 0 004 0"/>
@@ -411,7 +411,7 @@ export function MobileBottomNav() {
     return pathname.startsWith(item.href)
   }
 
-  const items = NAV_ITEMS.filter((item) => item.id !== "alerts")
+  const items = NAV_ITEMS.filter((item) => ["devices", "metrics", "terminal", "ops"].includes(item.id))
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Navegacion movil">

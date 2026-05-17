@@ -13,6 +13,7 @@ from app.schemas.ws_messages import (
     AgentAiErrorMessage,
     AgentAiPtyReadyMessage,
     AgentActionResultMessage,
+    AgentDockerSnapshotMessage,
     AgentHeartbeatMessage,
     AgentMetricsMessage,
     AgentTerminalExitMessage,
@@ -28,6 +29,7 @@ from app.services.action_service import get_run_by_request_id, mark_run_result
 from app.services.agent_security_service import assert_nonce_unused, verify_handshake_signature
 from app.services.audit_service import create_audit_log
 from app.services.device_service import get_device, register_heartbeat, store_device_metric, verify_agent_key
+from app.services.docker_service import apply_docker_snapshot
 from app.services.organization_service import list_user_memberships, require_membership_or_403
 from app.services.ws_hub import ws_hub
 
@@ -573,6 +575,26 @@ async def ws_agent(websocket: WebSocket) -> None:
                             }
                         )
                         await websocket.send_json({"type": "server.ack", "event": "agent.action.result"})
+                elif msg_type == "agent.docker.snapshot.push":
+                    msg = AgentDockerSnapshotMessage.model_validate(raw)
+                    emitted = apply_docker_snapshot(
+                        db,
+                        device=device,
+                        containers=[c.model_dump() for c in msg.data.containers],
+                    )
+                    db.commit()
+                    for event in emitted:
+                        await ws_hub.broadcast_to_clients(event)
+                    await websocket.send_json(
+                        {
+                            "type": "server.ack",
+                            "event": "agent.docker.snapshot.push",
+                            "data": {
+                                "containers_received": len(msg.data.containers),
+                                "changes_detected": len(emitted),
+                            },
+                        }
+                    )
                 elif msg_type == "agent.terminal.output":
                     msg = AgentTerminalOutputMessage.model_validate(raw)
                     session = terminal_sessions.get(msg.data.session_id)
